@@ -1,0 +1,22 @@
+{
+"tasks": {
+    "dev": "deno run --watch --allow-net --allow-read --allow-write --allow-run=git --allow-env src/main.ts",
+    "start": "deno run --allow-net --allow-read --allow-write --allow-run=git --allow-env src/main.ts",
+    "compile": "deno compile --allow-net --allow-read --allow-write --allow-run=git --allow-env --output cora src/main.ts",
+    "compile:darwin-x86": "deno compile --allow-net --allow-read --allow-write --allow-run=git --allow-env --target x86_64-apple-darwin --output dist/cora-darwin-x86_64 src/main.ts",
+    "compile:darwin-arm": "deno compile --allow-net --allow-read --allow-write --allow-run=git --allow-env --target aarch64-apple-darwin --output dist/cora-darwin-aarch64 src/main.ts",
+    "compile:linux-x86": "deno compile --allow-net --allow-read --allow-write --allow-run=git --allow-env --target x86_64-unknown-linux-gnu --output dist/cora-linux-x86_64 src/main.ts",
+    "compile:linux-arm": "deno compile --allow-net --allow-read --allow-write --allow-run=git --allow-env --target aarch64-unknown-linux-gnu --output dist/cora-linux-aarch64 src/main.ts",
+    "compile:all": "deno task compile:darwin-x86 && deno task compile:darwin-arm && deno task compile:linux-x86 && deno task compile:linux-arm",
+    "test": "deno test --allow-net --allow-read --allow-write --allow-run=git --allow-env"
+  },
+  "imports": {
+    "@std/cli": "jsr:@std/cli@^1",
+    "@std/path": "jsr:@std/path@^1",
+    "@std/fs": "jsr:@std/fs@^1",
+    "@std/crypto": "jsr:@std/crypto@^1"
+  },
+  "compilerOptions": {
+    "strict": true
+  }
+}
