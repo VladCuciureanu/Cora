@@ -1,9 +1,24 @@
 import { loadConfig, saveConfig, generateApiKey, type CoraConfig } from "../config/mod.ts";
+import { generateQrCode, renderToUnicode } from "@openjs/denoqr";
 
 function prompt(message: string, defaultValue?: string): string {
   const suffix = defaultValue ? ` [${defaultValue}]` : "";
   const input = globalThis.prompt(`${message}${suffix}:`);
   return input?.trim() || defaultValue || "";
+}
+
+function getLocalIp(): string | null {
+  try {
+    const ifaces = Deno.networkInterfaces();
+    for (const iface of ifaces) {
+      if (iface.family === "IPv4" && !iface.address.startsWith("127.")) {
+        return iface.address;
+      }
+    }
+  } catch {
+    // permission denied or unavailable
+  }
+  return null;
 }
 
 export async function initCommand(): Promise<void> {
@@ -46,10 +61,22 @@ export async function initCommand(): Promise<void> {
 
   await saveConfig(config);
 
+  const localIp = getLocalIp();
+  const host = localIp ?? "<your-ip>";
+  const endpoint = `http://${host}:${port}/beat`;
+
   console.log("\n✓ Config saved to ~/.config/cora/config.json");
   console.log("\n— iOS Shortcut Setup —");
-  console.log(`  Endpoint: http://<your-ip>:${port}/beat`);
+  console.log(`  Endpoint: ${endpoint}`);
   console.log(`  API Key:  ${apiKey}`);
   console.log(`  Header:   Authorization: Bearer ${apiKey}`);
   console.log(`\n  POST body: {"timestamp": "...", "bpm": 72, "rr_intervals": [830]}`);
+
+  // QR code containing setup payload for easy phone scanning
+  const qrPayload = JSON.stringify({ endpoint, key: apiKey });
+  const modules = generateQrCode(qrPayload, { ecc: "L" });
+  const qrString = renderToUnicode(modules);
+
+  console.log("\n— Scan with your phone to copy setup info —\n");
+  console.log(qrString);
 }

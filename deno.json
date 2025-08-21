@@ -14,7 +14,8 @@
     "@std/cli": "jsr:@std/cli@^1",
     "@std/path": "jsr:@std/path@^1",
     "@std/fs": "jsr:@std/fs@^1",
-    "@std/crypto": "jsr:@std/crypto@^1"
+    "@std/crypto": "jsr:@std/crypto@^1",
+    "@openjs/denoqr": "jsr:@openjs/denoqr@^1"
   },
   "compilerOptions": {
     "strict": true
