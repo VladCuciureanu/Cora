@@ -4,6 +4,39 @@ import { BeatBuffer } from "../beats/mod.ts";
 import { OfflineQueue } from "../queue/mod.ts";
 import { MockHeart } from "../mock/heart.ts";
 
+function parseArgs(args: string[]): { speed: number; startDate: Date | null; endDate: Date | null } {
+  let speed = 1;
+  let startDate: Date | null = null;
+  let endDate: Date | null = null;
+
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === "--from" && args[i + 1]) {
+      startDate = new Date(args[++i]);
+      if (isNaN(startDate.getTime())) {
+        console.error(`Invalid --from date: ${args[i]}`);
+        Deno.exit(1);
+      }
+    } else if (args[i] === "--to" && args[i + 1]) {
+      endDate = new Date(args[++i]);
+      if (isNaN(endDate.getTime())) {
+        console.error(`Invalid --to date: ${args[i]}`);
+        Deno.exit(1);
+      }
+    } else if (args[i] === "--speed" && args[i + 1]) {
+      speed = parseFloat(args[++i]);
+    } else if (!args[i].startsWith("--")) {
+      speed = parseFloat(args[i]);
+    }
+  }
+
+  if (isNaN(speed) || speed <= 0) {
+    console.error("Speed must be a positive number (e.g. 60 = 1 hour/min, 1440 = 1 day/min)");
+    Deno.exit(1);
+  }
+
+  return { speed, startDate, endDate };
+}
+
 export async function mockCommand(): Promise<void> {
   const config = await loadConfig();
   if (!config) {
@@ -11,11 +44,9 @@ export async function mockCommand(): Promise<void> {
     Deno.exit(1);
   }
 
-  const speed = parseFloat(Deno.args[1] ?? "1");
-  if (isNaN(speed) || speed <= 0) {
-    console.error("Speed must be a positive number (e.g. 60 = 1 hour/min, 1440 = 1 day/min)");
-    Deno.exit(1);
-  }
+  const { speed, startDate, endDate } = parseArgs(Deno.args);
+  const backfillMode = startDate !== null;
+  const backfillEnd = endDate ?? new Date();
 
   await Deno.writeTextFile(pidPath(), String(Deno.pid));
 
@@ -48,6 +79,52 @@ export async function mockCommand(): Promise<void> {
     },
   });
 
+  // --- Backfill mode: generate all beats synchronously, then exit ---
+  if (backfillMode) {
+    console.log(`♥ Backfilling from ${startDate!.toISOString()} to ${backfillEnd.toISOString()}`);
+
+    let simTime = startDate!.getTime();
+    const endTime = backfillEnd.getTime();
+    let lastDay = new Date(simTime).getDate();
+    let lastFlush = simTime;
+    let totalBaselines = 0;
+
+    while (simTime < endTime) {
+      simTime += 5000; // advance 5 simulated seconds per tick
+      const simDate = new Date(simTime);
+
+      const currentDay = simDate.getDate();
+      if (currentDay !== lastDay) {
+        heart.replanDay();
+        lastDay = currentDay;
+        console.log(`\n— ${simDate.toISOString().slice(0, 10)} — ${heart.getActivityPlan().length} activities`);
+      }
+
+      const bpm = heart.bpmAt(simDate);
+      await buffer.addSample({
+        timestamp: simDate.toISOString(),
+        bpm,
+        rrIntervals: [Math.round(60000 / bpm)],
+      });
+
+      if (simTime - lastFlush >= config.commitIntervalMs) {
+        await buffer.flushWindow();
+        lastFlush = simTime;
+        totalBaselines++;
+      }
+    }
+
+    // Flush remaining
+    await buffer.flushWindow();
+    await gitEngine.shutdown();
+    try { await Deno.remove(pidPath()); } catch { /* ignore */ }
+
+    const days = Math.ceil((endTime - startDate!.getTime()) / 86_400_000);
+    console.log(`\n✓ Backfill complete: ~${totalBaselines} baselines across ${days} day(s)`);
+    return;
+  }
+
+  // --- Live mode: generate beats in real-time (with speed multiplier) ---
   console.log(`♥ Mock heart started (speed: ${speed}x)`);
   console.log(`  1 real second = ${speed} simulated seconds`);
   if (speed >= 60) console.log(`  ≈ ${(speed / 60).toFixed(1)} simulated minutes per real second`);
@@ -64,15 +141,13 @@ export async function mockCommand(): Promise<void> {
   let lastDay = new Date(simTime).getDate();
   let lastFlush = simTime;
 
-  // Sample every ~5 simulated seconds (adjusting for speed)
-  const sampleIntervalReal = Math.max(50, 5000 / speed); // ms between samples in real time
-  const simStepMs = 5000; // always advance 5 simulated seconds per tick
+  const sampleIntervalReal = Math.max(50, 5000 / speed);
+  const simStepMs = 5000;
 
   const ticker = setInterval(async () => {
     simTime += simStepMs;
     const simDate = new Date(simTime);
 
-    // Replan activities at midnight
     const currentDay = simDate.getDate();
     if (currentDay !== lastDay) {
       heart.replanDay();
@@ -87,7 +162,6 @@ export async function mockCommand(): Promise<void> {
       rrIntervals: [Math.round(60000 / bpm)],
     });
 
-    // Flush at commit interval (in simulated time)
     if (simTime - lastFlush >= config.commitIntervalMs) {
       await buffer.flushWindow();
       lastFlush = simTime;

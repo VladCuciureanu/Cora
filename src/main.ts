@@ -16,7 +16,8 @@ Usage:
   cora status        Show connection state, beats/min, queue depth
   cora stats         Lifetime stats: total beats, longest streak, avg BPM
   cora replay        Replay queued beats from an offline period
-  cora mock [speed]  Simulate heartbeat with realistic patterns (speed: 1=realtime, 1440=1day/min)
+  cora mock [speed]  Simulate heartbeat in real-time (speed: 1=realtime, 1440=1day/min)
+  cora mock --from 2025-01-01 [--to 2025-06-01]  Backfill past dates
 
 Options:
   --help, -h         Show this help message
