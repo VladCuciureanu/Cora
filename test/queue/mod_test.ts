@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import { OfflineQueue } from "./mod.ts";
+import { OfflineQueue } from "../../src/queue/mod.ts";
 
 Deno.test("OfflineQueue - enqueue and drain", async () => {
   const tmp = await Deno.makeTempFile({ suffix: ".jsonl" });

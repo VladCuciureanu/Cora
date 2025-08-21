@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
-import { BeatBuffer } from "./mod.ts";
-import type { BaselineData, EventData } from "../git/mod.ts";
+import { BeatBuffer } from "../../src/beats/mod.ts";
+import type { BaselineData, EventData } from "../../src/git/mod.ts";
 
 Deno.test("BeatBuffer - flushWindow computes correct baseline", async () => {
   const buffer = new BeatBuffer(300_000, 20);

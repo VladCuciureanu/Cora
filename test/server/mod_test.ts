@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
-import { BeatBuffer } from "../beats/mod.ts";
-import { IngestionServer } from "./mod.ts";
+import { BeatBuffer } from "../../src/beats/mod.ts";
+import { IngestionServer } from "../../src/server/mod.ts";
 
 const TEST_API_KEY = "testkey123";
 const TEST_PORT = 9876;

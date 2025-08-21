@@ -1,5 +1,5 @@
 import { assertEquals, assertNotEquals } from "jsr:@std/assert";
-import { generateApiKey, type CoraConfig } from "./mod.ts";
+import { generateApiKey, type CoraConfig } from "../../src/config/mod.ts";
 import { join } from "@std/path";
 import { ensureDir } from "@std/fs";
 

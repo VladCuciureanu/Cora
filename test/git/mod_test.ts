@@ -1,6 +1,6 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { join } from "@std/path";
-import { GitEngine, git } from "./mod.ts";
+import { GitEngine, git } from "../../src/git/mod.ts";
 
 async function withTempRepo(fn: (dir: string) => Promise<void>) {
   const dir = await Deno.makeTempDir({ prefix: "cora-test-" });

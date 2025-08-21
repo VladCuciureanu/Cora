@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import { MockHeart } from "./heart.ts";
+import { MockHeart } from "../../src/mock/heart.ts";
 
 function dateAt(hour: number, minute: number): Date {
   const d = new Date("2026-03-24T00:00:00");

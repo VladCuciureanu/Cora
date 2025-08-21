@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { join } from "@std/path";
-import { calculateStreak, parseBpmsFromMessages, getStats } from "./stats.ts";
-import { git } from "../git/mod.ts";
+import { calculateStreak, parseBpmsFromMessages, getStats } from "../../src/cli/stats.ts";
+import { git } from "../../src/git/mod.ts";
 
 Deno.test("calculateStreak - consecutive days from today", () => {
   const today = new Date("2026-03-24T12:00:00Z");

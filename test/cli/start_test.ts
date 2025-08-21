@@ -1,9 +1,9 @@
 import { assertEquals } from "jsr:@std/assert";
 import { join } from "@std/path";
-import { GitEngine, git } from "../git/mod.ts";
-import { BeatBuffer } from "../beats/mod.ts";
-import { OfflineQueue } from "../queue/mod.ts";
-import type { BaselineData, EventData } from "../git/mod.ts";
+import { GitEngine, git } from "../../src/git/mod.ts";
+import { BeatBuffer } from "../../src/beats/mod.ts";
+import { OfflineQueue } from "../../src/queue/mod.ts";
+import type { BaselineData, EventData } from "../../src/git/mod.ts";
 
 async function withTempRepo(fn: (dir: string) => Promise<void>) {
   const dir = await Deno.makeTempDir({ prefix: "cora-start-test-" });
