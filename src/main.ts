@@ -4,6 +4,7 @@ import { stopCommand } from "./cli/stop.ts";
 import { statusCommand } from "./cli/status.ts";
 import { statsCommand } from "./cli/stats.ts";
 import { replayCommand } from "./cli/replay.ts";
+import { mockCommand } from "./cli/mock.ts";
 
 const HELP = `
 cora — your heartbeat on GitHub
@@ -15,6 +16,7 @@ Usage:
   cora status        Show connection state, beats/min, queue depth
   cora stats         Lifetime stats: total beats, longest streak, avg BPM
   cora replay        Replay queued beats from an offline period
+  cora mock [speed]  Simulate heartbeat with realistic patterns (speed: 1=realtime, 1440=1day/min)
 
 Options:
   --help, -h         Show this help message
@@ -30,6 +32,7 @@ const commands: Record<string, () => Promise<void>> = {
   status: statusCommand,
   stats: statsCommand,
   replay: replayCommand,
+  mock: mockCommand,
 };
 
 async function main() {
