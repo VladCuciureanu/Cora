@@ -1,3 +1,5 @@
 notes/
 dist/
 cora
+.herodotus.toml
+deno.lock
