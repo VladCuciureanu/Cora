@@ -1,15 +1,39 @@
 import { repoDir } from "../config/mod.ts";
 
-export async function statsCommand(): Promise<void> {
-  const dir = repoDir();
+export interface StatsResult {
+  totalCommits: number;
+  firstBeat: string;
+  lastBeat: string;
+  streakDays: number;
+  avgBpm: number | null;
+}
 
-  try {
-    await Deno.stat(`${dir}/.git`);
-  } catch {
-    console.error("No heartbeat repo found. Run `cora start` first.");
-    Deno.exit(1);
+export function calculateStreak(dates: string[], today: Date): number {
+  const daySet = new Set(dates.map((d) => d.slice(0, 10)));
+  let streak = 0;
+  for (let i = 0; ; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    if (daySet.has(key)) {
+      streak++;
+    } else {
+      break;
+    }
   }
+  return streak;
+}
 
+export function parseBpmsFromMessages(messages: string[]): number[] {
+  const bpms: number[] = [];
+  for (const msg of messages) {
+    const match = msg.match(/(\d+)bpm/);
+    if (match) bpms.push(parseInt(match[1], 10));
+  }
+  return bpms;
+}
+
+export async function getStats(dir: string, today?: Date): Promise<StatsResult | null> {
   // Count total commits
   const totalCmd = new Deno.Command("git", {
     args: ["rev-list", "--count", "HEAD"],
@@ -30,28 +54,11 @@ export async function statsCommand(): Promise<void> {
   const logOut = await logCmd.output();
   const dates = new TextDecoder().decode(logOut.stdout).trim().split("\n").filter(Boolean);
 
-  if (dates.length === 0) {
-    console.log("No heartbeat data yet.");
-    return;
-  }
+  if (dates.length === 0) return null;
 
-  const first = dates[0];
-  const last = dates[dates.length - 1];
-
-  // Calculate streak (consecutive days with commits)
-  const daySet = new Set(dates.map((d) => d.slice(0, 10)));
-  let streak = 0;
-  const today = new Date();
-  for (let i = 0; ; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
-    if (daySet.has(key)) {
-      streak++;
-    } else {
-      break;
-    }
-  }
+  const firstBeat = dates[0];
+  const lastBeat = dates[dates.length - 1];
+  const streakDays = calculateStreak(dates, today ?? new Date());
 
   // Parse BPMs from commit messages
   const msgCmd = new Deno.Command("git", {
@@ -62,20 +69,34 @@ export async function statsCommand(): Promise<void> {
   });
   const msgOut = await msgCmd.output();
   const messages = new TextDecoder().decode(msgOut.stdout).trim().split("\n");
-  const bpms: number[] = [];
-  for (const msg of messages) {
-    const match = msg.match(/(\d+)bpm/);
-    if (match) bpms.push(parseInt(match[1], 10));
-  }
-
+  const bpms = parseBpmsFromMessages(messages);
   const avgBpm = bpms.length > 0 ? Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length) : null;
 
+  return { totalCommits, firstBeat, lastBeat, streakDays, avgBpm };
+}
+
+export async function statsCommand(): Promise<void> {
+  const dir = repoDir();
+
+  try {
+    await Deno.stat(`${dir}/.git`);
+  } catch {
+    console.error("No heartbeat repo found. Run `cora start` first.");
+    Deno.exit(1);
+  }
+
+  const stats = await getStats(dir);
+  if (!stats) {
+    console.log("No heartbeat data yet.");
+    return;
+  }
+
   console.log("♥ Cora Stats");
-  console.log(`  Total commits:  ${totalCommits}`);
-  console.log(`  First beat:     ${first}`);
-  console.log(`  Last beat:      ${last}`);
-  console.log(`  Current streak: ${streak} day${streak !== 1 ? "s" : ""}`);
-  if (avgBpm !== null) {
-    console.log(`  Average BPM:    ${avgBpm}`);
+  console.log(`  Total commits:  ${stats.totalCommits}`);
+  console.log(`  First beat:     ${stats.firstBeat}`);
+  console.log(`  Last beat:      ${stats.lastBeat}`);
+  console.log(`  Current streak: ${stats.streakDays} day${stats.streakDays !== 1 ? "s" : ""}`);
+  if (stats.avgBpm !== null) {
+    console.log(`  Average BPM:    ${stats.avgBpm}`);
   }
 }

@@ -16,7 +16,7 @@ export interface EventData {
   kind: "spike" | "drop" | "reconnect" | "custom";
 }
 
-async function git(args: string[], cwd: string, env?: Record<string, string>): Promise<string> {
+export async function git(args: string[], cwd: string, env?: Record<string, string>): Promise<string> {
   const cmd = new Deno.Command("git", {
     args,
     cwd,
@@ -37,9 +37,11 @@ export class GitEngine {
   private pendingCommits = 0;
   private pushIntervalMs = 10_000;
   private pushTimer: number | undefined;
+  private skipPush: boolean;
 
-  constructor(dir?: string) {
+  constructor(dir?: string, opts?: { skipPush?: boolean }) {
     this.dir = dir ?? repoDir();
+    this.skipPush = opts?.skipPush ?? false;
   }
 
   async init(): Promise<void> {
@@ -57,10 +59,14 @@ export class GitEngine {
       await git(["clone", authUrl, "."], this.dir);
     }
 
-    // Ensure beats directory exists
-    await ensureDir(join(this.dir, "beats"));
+    await this.initLocal();
+  }
 
-    this.pushTimer = setInterval(() => this.flush(), this.pushIntervalMs);
+  async initLocal(): Promise<void> {
+    await ensureDir(join(this.dir, "beats"));
+    if (!this.skipPush) {
+      this.pushTimer = setInterval(() => this.flush(), this.pushIntervalMs);
+    }
   }
 
   async commitBaseline(data: BaselineData): Promise<void> {
@@ -117,6 +123,12 @@ export class GitEngine {
 
   async shutdown(): Promise<void> {
     if (this.pushTimer !== undefined) clearInterval(this.pushTimer);
-    await this.flush();
+    if (!this.skipPush) {
+      await this.flush();
+    }
+  }
+
+  getDir(): string {
+    return this.dir;
   }
 }
