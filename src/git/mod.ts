@@ -116,8 +116,15 @@ export class GitEngine {
     try {
       await git(["push"], this.dir);
       this.pendingCommits = 0;
-    } catch (e) {
-      console.error(`Push failed (${this.pendingCommits} commits queued): ${e}`);
+    } catch {
+      // Push failed, likely non-fast-forward — pull and retry
+      try {
+        await git(["pull", "--rebase"], this.dir);
+        await git(["push"], this.dir);
+        this.pendingCommits = 0;
+      } catch (e) {
+        console.error(`Push failed after pull --rebase (${this.pendingCommits} commits queued): ${e}`);
+      }
     }
   }
 
