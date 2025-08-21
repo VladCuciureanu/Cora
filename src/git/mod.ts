@@ -138,4 +138,24 @@ export class GitEngine {
   getDir(): string {
     return this.dir;
   }
+
+  async getLatestBeatTimestamp(): Promise<Date | null> {
+    const beatsDir = join(this.dir, "beats");
+    let latest: Date | null = null;
+
+    try {
+      for await (const entry of Deno.readDir(beatsDir)) {
+        if (!entry.isFile || !entry.name.endsWith(".beat")) continue;
+        const tsStr = entry.name.replace(".beat", "");
+        const date = new Date(tsStr);
+        if (!isNaN(date.getTime()) && (latest === null || date > latest)) {
+          latest = date;
+        }
+      }
+    } catch {
+      // beats dir doesn't exist yet
+    }
+
+    return latest;
+  }
 }

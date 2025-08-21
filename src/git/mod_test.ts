@@ -140,3 +140,40 @@ Deno.test("GitEngine - initLocal creates beats directory", async () => {
     await engine.shutdown();
   });
 });
+
+Deno.test("GitEngine - getLatestBeatTimestamp returns latest", async () => {
+  await withTempRepo(async (dir) => {
+    const engine = new GitEngine(dir, { skipPush: true });
+    await engine.initLocal();
+
+    await engine.commitBaseline({
+      timestamp: "2026-01-01T10:00:00.000Z",
+      avgBpm: 70, minBpm: 65, maxBpm: 75, beatCount: 10,
+    });
+    await engine.commitBaseline({
+      timestamp: "2026-03-15T14:30:00.000Z",
+      avgBpm: 72, minBpm: 66, maxBpm: 78, beatCount: 12,
+    });
+    await engine.commitEvent({
+      timestamp: "2026-02-10T08:00:00.000Z",
+      bpm: 130, kind: "spike",
+    });
+
+    const latest = await engine.getLatestBeatTimestamp();
+    assertEquals(latest!.toISOString(), "2026-03-15T14:30:00.000Z");
+
+    await engine.shutdown();
+  });
+});
+
+Deno.test("GitEngine - getLatestBeatTimestamp returns null when empty", async () => {
+  await withTempRepo(async (dir) => {
+    const engine = new GitEngine(dir, { skipPush: true });
+    await engine.initLocal();
+
+    const latest = await engine.getLatestBeatTimestamp();
+    assertEquals(latest, null);
+
+    await engine.shutdown();
+  });
+});

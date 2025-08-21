@@ -44,7 +44,7 @@ export async function mockCommand(): Promise<void> {
     Deno.exit(1);
   }
 
-  const { speed, startDate, endDate } = parseArgs(Deno.args);
+  let { speed, startDate, endDate } = parseArgs(Deno.args);
   const backfillMode = startDate !== null;
   const backfillEnd = endDate ?? new Date();
 
@@ -53,6 +53,19 @@ export async function mockCommand(): Promise<void> {
   const gitEngine = new GitEngine();
   await gitEngine.init();
   console.log("✓ Git repo ready");
+
+  // Resume from latest beat if available
+  const latestBeat = await gitEngine.getLatestBeatTimestamp();
+  if (latestBeat) {
+    const resumeFrom = new Date(latestBeat.getTime() + 1); // 1ms after last beat
+    if (backfillMode && startDate && resumeFrom > startDate) {
+      startDate = resumeFrom;
+      console.log(`♥ Resuming from last beat: ${latestBeat.toISOString()}`);
+    } else if (!backfillMode) {
+      // In live mode, if latest beat is in the past, we may want to note it
+      console.log(`♥ Last beat: ${latestBeat.toISOString()}`);
+    }
+  }
 
   const queue = new OfflineQueue();
   const heart = new MockHeart();
@@ -125,6 +138,40 @@ export async function mockCommand(): Promise<void> {
   }
 
   // --- Live mode: generate beats in real-time (with speed multiplier) ---
+  // If there's a gap between the latest beat and now, backfill it first
+  if (latestBeat && latestBeat.getTime() < Date.now() - config.commitIntervalMs) {
+    const gapStart = new Date(latestBeat.getTime() + 1);
+    const gapEnd = new Date();
+    console.log(`♥ Filling gap: ${gapStart.toISOString()} → ${gapEnd.toISOString()}`);
+
+    let gapTime = gapStart.getTime();
+    const gapEndTime = gapEnd.getTime();
+    let gapDay = gapStart.getDate();
+    let gapFlush = gapTime;
+
+    while (gapTime < gapEndTime) {
+      gapTime += 5000;
+      const simDate = new Date(gapTime);
+      const currentDay = simDate.getDate();
+      if (currentDay !== gapDay) {
+        heart.replanDay();
+        gapDay = currentDay;
+      }
+      const bpm = heart.bpmAt(simDate);
+      await buffer.addSample({
+        timestamp: simDate.toISOString(),
+        bpm,
+        rrIntervals: [Math.round(60000 / bpm)],
+      });
+      if (gapTime - gapFlush >= config.commitIntervalMs) {
+        await buffer.flushWindow();
+        gapFlush = gapTime;
+      }
+    }
+    await buffer.flushWindow();
+    console.log("✓ Gap filled\n");
+  }
+
   console.log(`♥ Mock heart started (speed: ${speed}x)`);
   console.log(`  1 real second = ${speed} simulated seconds`);
   if (speed >= 60) console.log(`  ≈ ${(speed / 60).toFixed(1)} simulated minutes per real second`);
