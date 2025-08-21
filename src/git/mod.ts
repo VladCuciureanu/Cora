@@ -16,6 +16,10 @@ export interface EventData {
   kind: "spike" | "drop" | "reconnect" | "custom";
 }
 
+export type CommitEntry =
+  | { type: "baseline"; data: BaselineData }
+  | { type: "event"; data: EventData };
+
 export async function git(args: string[], cwd: string, env?: Record<string, string>): Promise<string> {
   const cmd = new Deno.Command("git", {
     args,
@@ -109,6 +113,141 @@ export class GitEngine {
       },
     );
     this.pendingCommits++;
+  }
+
+  /**
+   * Bulk-import commits using `git fast-import`. Streams directly to the
+   * process to avoid buffering everything in memory.
+   */
+  async fastImport(entries: CommitEntry[], onProgress?: (done: number, total: number) => void): Promise<void> {
+    if (entries.length === 0) return;
+
+    const branch = (await git(["rev-parse", "--abbrev-ref", "HEAD"], this.dir)) || "main";
+    let parentRef: string | null = null;
+    try {
+      parentRef = await git(["rev-parse", "HEAD"], this.dir);
+    } catch { /* empty repo */ }
+
+    const existingFiles = await this.readTrackedFiles();
+
+    let userName = "Cora";
+    let userEmail = "cora@heartbeat";
+    try { userName = await git(["config", "user.name"], this.dir); } catch { /* */ }
+    try { userEmail = await git(["config", "user.email"], this.dir); } catch { /* */ }
+
+    // Spawn fast-import and stream to it
+    const child = new Deno.Command("git", {
+      args: ["fast-import", "--done", "--quiet"],
+      cwd: this.dir,
+      stdin: "piped",
+      stdout: "piped",
+      stderr: "piped",
+    }).spawn();
+
+    const encoder = new TextEncoder();
+    const writer = child.stdin.getWriter();
+
+    const write = async (s: string) => { await writer.write(encoder.encode(s)); };
+    const writeData = async (data: Uint8Array) => {
+      await write(`data ${data.length}\n`);
+      await writer.write(data);
+      await write("\n");
+    };
+
+    let markNum = 1;
+    let lastMark: number | null = null;
+
+    // Pre-emit blobs for existing tracked files
+    const existingFileMarks: [string, number][] = [];
+    for (const [path, content] of existingFiles) {
+      const blobMark = markNum++;
+      await write(`blob\nmark :${blobMark}\n`);
+      await writeData(content);
+      existingFileMarks.push([path, blobMark]);
+    }
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const isBaseline = entry.type === "baseline";
+      const data = entry.data;
+      const ts = data.timestamp;
+      const epoch = Math.floor(new Date(ts).getTime() / 1000);
+
+      let fileContent: string;
+      let commitMsg: string;
+      if (isBaseline) {
+        const bd = data as BaselineData;
+        fileContent = JSON.stringify({
+          avg_bpm: bd.avgBpm, min_bpm: bd.minBpm,
+          max_bpm: bd.maxBpm, beat_count: bd.beatCount,
+        }, null, 2) + "\n";
+        commitMsg = `♥ ${bd.avgBpm}bpm @ ${ts}`;
+      } else {
+        const ed = data as EventData;
+        fileContent = JSON.stringify({ bpm: ed.bpm, kind: ed.kind }, null, 2) + "\n";
+        commitMsg = `⚡ ${ed.bpm}bpm ${ed.kind} @ ${ts}`;
+      }
+
+      const filename = `beats/${ts}.beat`;
+      const mark = markNum++;
+      const contentBytes = encoder.encode(fileContent);
+
+      await write(`blob\nmark :${mark}\n`);
+      await writeData(contentBytes);
+
+      const commitMark = markNum++;
+      await write(`commit refs/heads/${branch}\nmark :${commitMark}\n`);
+      await write(`author ${userName} <${userEmail}> ${epoch} +0000\n`);
+      await write(`committer ${userName} <${userEmail}> ${epoch} +0000\n`);
+      await writeData(encoder.encode(commitMsg));
+
+      if (i === 0 && parentRef) {
+        await write(`from ${parentRef}\n`);
+      } else if (lastMark !== null) {
+        await write(`from :${lastMark}\n`);
+      }
+
+      // Include existing files in first commit to preserve them
+      if (i === 0) {
+        for (const [path, blobMark] of existingFileMarks) {
+          await write(`M 100644 :${blobMark} ${path}\n`);
+        }
+      }
+
+      await write(`M 100644 :${mark} ${filename}\n\n`);
+      lastMark = commitMark;
+
+      if (onProgress && (i + 1) % 500 === 0) {
+        onProgress(i + 1, entries.length);
+      }
+    }
+
+    await write("done\n");
+    await writer.close();
+
+    const { code, stderr } = await child.output();
+    if (code !== 0) {
+      const err = new TextDecoder().decode(stderr);
+      throw new Error(`git fast-import failed: ${err}`);
+    }
+
+    await git(["checkout", "-f", branch], this.dir);
+    this.pendingCommits += entries.length;
+    if (onProgress) onProgress(entries.length, entries.length);
+  }
+
+  private async readTrackedFiles(): Promise<Map<string, Uint8Array>> {
+    const files = new Map<string, Uint8Array>();
+    try {
+      const output = await git(["ls-files"], this.dir);
+      if (!output) return files;
+      for (const filePath of output.split("\n")) {
+        if (!filePath) continue;
+        const content = await Deno.readFile(join(this.dir, filePath));
+        files.set(filePath, content);
+      }
+    } catch { /* empty repo */ }
+    return files;
   }
 
   async flush(): Promise<void> {

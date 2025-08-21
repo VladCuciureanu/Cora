@@ -1,5 +1,5 @@
 import { loadConfig, pidPath } from "../config/mod.ts";
-import { GitEngine } from "../git/mod.ts";
+import { GitEngine, type CommitEntry, type BaselineData } from "../git/mod.ts";
 import { BeatBuffer } from "../beats/mod.ts";
 import { OfflineQueue } from "../queue/mod.ts";
 import { MockHeart } from "../mock/heart.ts";
@@ -37,6 +37,92 @@ function parseArgs(args: string[]): { speed: number; startDate: Date | null; end
   return { speed, startDate, endDate };
 }
 
+/** Generate all commit entries for a date range without touching git. */
+function generateEntries(
+  heart: MockHeart,
+  startMs: number,
+  endMs: number,
+  commitIntervalMs: number,
+  thresholdPercent: number,
+): CommitEntry[] {
+  const entries: CommitEntry[] = [];
+  const sampleStepMs = 5000;
+
+  let simTime = startMs;
+  let lastDay = new Date(simTime).getDate();
+  let windowSamples: { bpm: number; timestamp: string }[] = [];
+  let lastFlush = simTime;
+  const rollingBpms: number[] = [];
+
+  while (simTime < endMs) {
+    simTime += sampleStepMs;
+    const simDate = new Date(simTime);
+
+    const currentDay = simDate.getDate();
+    if (currentDay !== lastDay) {
+      heart.replanDay();
+      lastDay = currentDay;
+    }
+
+    const bpm = heart.bpmAt(simDate);
+
+    // Event detection against rolling average
+    if (rollingBpms.length >= 5) {
+      const avg = rollingBpms.reduce((a, b) => a + b, 0) / rollingBpms.length;
+      const deviation = Math.abs(bpm - avg) / avg * 100;
+      if (deviation >= thresholdPercent) {
+        entries.push({
+          type: "event",
+          data: {
+            timestamp: simDate.toISOString(),
+            bpm,
+            kind: bpm > avg ? "spike" : "drop",
+          },
+        });
+      }
+    }
+
+    rollingBpms.push(bpm);
+    if (rollingBpms.length > 30) rollingBpms.shift();
+
+    windowSamples.push({ bpm, timestamp: simDate.toISOString() });
+
+    // Flush window at commit interval
+    if (simTime - lastFlush >= commitIntervalMs) {
+      if (windowSamples.length > 0) {
+        const bpms = windowSamples.map((s) => s.bpm);
+        const baseline: BaselineData = {
+          timestamp: windowSamples[windowSamples.length - 1].timestamp,
+          avgBpm: Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length),
+          minBpm: Math.min(...bpms),
+          maxBpm: Math.max(...bpms),
+          beatCount: windowSamples.length,
+        };
+        entries.push({ type: "baseline", data: baseline });
+        windowSamples = [];
+      }
+      lastFlush = simTime;
+    }
+  }
+
+  // Flush remaining
+  if (windowSamples.length > 0) {
+    const bpms = windowSamples.map((s) => s.bpm);
+    entries.push({
+      type: "baseline",
+      data: {
+        timestamp: windowSamples[windowSamples.length - 1].timestamp,
+        avgBpm: Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length),
+        minBpm: Math.min(...bpms),
+        maxBpm: Math.max(...bpms),
+        beatCount: windowSamples.length,
+      },
+    });
+  }
+
+  return entries;
+}
+
 export async function mockCommand(): Promise<void> {
   const config = await loadConfig();
   if (!config) {
@@ -57,18 +143,54 @@ export async function mockCommand(): Promise<void> {
   // Resume from latest beat if available
   const latestBeat = await gitEngine.getLatestBeatTimestamp();
   if (latestBeat) {
-    const resumeFrom = new Date(latestBeat.getTime() + 1); // 1ms after last beat
+    const resumeFrom = new Date(latestBeat.getTime() + 1);
     if (backfillMode && startDate && resumeFrom > startDate) {
       startDate = resumeFrom;
       console.log(`♥ Resuming from last beat: ${latestBeat.toISOString()}`);
     } else if (!backfillMode) {
-      // In live mode, if latest beat is in the past, we may want to note it
       console.log(`♥ Last beat: ${latestBeat.toISOString()}`);
     }
   }
 
   const queue = new OfflineQueue();
   const heart = new MockHeart();
+
+  // --- Backfill mode: generate entries in memory, then fast-import ---
+  if (backfillMode) {
+    if (startDate!.getTime() >= backfillEnd.getTime()) {
+      console.log("Nothing to backfill — already up to date.");
+      try { await Deno.remove(pidPath()); } catch { /* ignore */ }
+      return;
+    }
+
+    const days = Math.ceil((backfillEnd.getTime() - startDate!.getTime()) / 86_400_000);
+    console.log(`♥ Generating ${days} days of heartbeat data...`);
+
+    const entries = generateEntries(
+      heart,
+      startDate!.getTime(),
+      backfillEnd.getTime(),
+      config.commitIntervalMs,
+      config.eventThresholdPercent,
+    );
+
+    console.log(`✓ Generated ${entries.length} commits. Fast-importing into git...`);
+
+    await gitEngine.fastImport(entries, (done, total) => {
+      const pct = Math.round((done / total) * 100);
+      Deno.stdout.writeSync(new TextEncoder().encode(`\r  Importing: ${done}/${total} (${pct}%)`));
+    });
+
+    console.log("\n✓ Fast-import complete. Pushing...");
+
+    await gitEngine.shutdown();
+    try { await Deno.remove(pidPath()); } catch { /* ignore */ }
+
+    console.log(`✓ Backfill complete: ${entries.length} commits across ${days} day(s)`);
+    return;
+  }
+
+  // --- Live mode ---
   const buffer = new BeatBuffer(config.commitIntervalMs, config.eventThresholdPercent);
 
   buffer.setListener({
@@ -92,84 +214,24 @@ export async function mockCommand(): Promise<void> {
     },
   });
 
-  // --- Backfill mode: generate all beats synchronously, then exit ---
-  if (backfillMode) {
-    console.log(`♥ Backfilling from ${startDate!.toISOString()} to ${backfillEnd.toISOString()}`);
-
-    let simTime = startDate!.getTime();
-    const endTime = backfillEnd.getTime();
-    let lastDay = new Date(simTime).getDate();
-    let lastFlush = simTime;
-    let totalBaselines = 0;
-
-    while (simTime < endTime) {
-      simTime += 5000; // advance 5 simulated seconds per tick
-      const simDate = new Date(simTime);
-
-      const currentDay = simDate.getDate();
-      if (currentDay !== lastDay) {
-        heart.replanDay();
-        lastDay = currentDay;
-        console.log(`\n— ${simDate.toISOString().slice(0, 10)} — ${heart.getActivityPlan().length} activities`);
-      }
-
-      const bpm = heart.bpmAt(simDate);
-      await buffer.addSample({
-        timestamp: simDate.toISOString(),
-        bpm,
-        rrIntervals: [Math.round(60000 / bpm)],
-      });
-
-      if (simTime - lastFlush >= config.commitIntervalMs) {
-        await buffer.flushWindow();
-        lastFlush = simTime;
-        totalBaselines++;
-      }
-    }
-
-    // Flush remaining
-    await buffer.flushWindow();
-    await gitEngine.shutdown();
-    try { await Deno.remove(pidPath()); } catch { /* ignore */ }
-
-    const days = Math.ceil((endTime - startDate!.getTime()) / 86_400_000);
-    console.log(`\n✓ Backfill complete: ~${totalBaselines} baselines across ${days} day(s)`);
-    return;
-  }
-
-  // --- Live mode: generate beats in real-time (with speed multiplier) ---
-  // If there's a gap between the latest beat and now, backfill it first
+  // Fill gap if needed
   if (latestBeat && latestBeat.getTime() < Date.now() - config.commitIntervalMs) {
     const gapStart = new Date(latestBeat.getTime() + 1);
     const gapEnd = new Date();
     console.log(`♥ Filling gap: ${gapStart.toISOString()} → ${gapEnd.toISOString()}`);
 
-    let gapTime = gapStart.getTime();
-    const gapEndTime = gapEnd.getTime();
-    let gapDay = gapStart.getDate();
-    let gapFlush = gapTime;
+    const gapEntries = generateEntries(
+      heart,
+      gapStart.getTime(),
+      gapEnd.getTime(),
+      config.commitIntervalMs,
+      config.eventThresholdPercent,
+    );
 
-    while (gapTime < gapEndTime) {
-      gapTime += 5000;
-      const simDate = new Date(gapTime);
-      const currentDay = simDate.getDate();
-      if (currentDay !== gapDay) {
-        heart.replanDay();
-        gapDay = currentDay;
-      }
-      const bpm = heart.bpmAt(simDate);
-      await buffer.addSample({
-        timestamp: simDate.toISOString(),
-        bpm,
-        rrIntervals: [Math.round(60000 / bpm)],
-      });
-      if (gapTime - gapFlush >= config.commitIntervalMs) {
-        await buffer.flushWindow();
-        gapFlush = gapTime;
-      }
+    if (gapEntries.length > 0) {
+      await gitEngine.fastImport(gapEntries);
+      console.log(`✓ Gap filled: ${gapEntries.length} commits\n`);
     }
-    await buffer.flushWindow();
-    console.log("✓ Gap filled\n");
   }
 
   console.log(`♥ Mock heart started (speed: ${speed}x)`);
