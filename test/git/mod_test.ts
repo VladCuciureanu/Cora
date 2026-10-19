@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat as fsStat, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { GitEngine, git } from "../../src/git/mod.ts";
+import { GitEngine, beatFilename, git, parseBeatFilename } from "../../src/git/mod.ts";
 
 function assertIncludes(actual: string, expected: string): void {
   assert.ok(actual.includes(expected), `Expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`);
@@ -40,7 +40,7 @@ test("GitEngine - commitBaseline creates beat file and commit", async () => {
     });
 
     // Verify file exists
-    const content = await readFile(join(dir, "beats", `${ts}.beat`), "utf8");
+    const content = await readFile(join(dir, "beats", beatFilename(ts)), "utf8");
     const data = JSON.parse(content);
     assert.deepEqual(data.avg_bpm, 72);
     assert.deepEqual(data.min_bpm, 60);
@@ -68,7 +68,7 @@ test("GitEngine - commitEvent creates beat file and commit", async () => {
       kind: "spike",
     });
 
-    const content = await readFile(join(dir, "beats", `${ts}.beat`), "utf8");
+    const content = await readFile(join(dir, "beats", beatFilename(ts)), "utf8");
     const data = JSON.parse(content);
     assert.deepEqual(data.bpm, 140);
     assert.deepEqual(data.kind, "spike");
@@ -180,6 +180,42 @@ test("GitEngine - getLatestBeatTimestamp returns null when empty", async () => {
 
     const latest = await engine.getLatestBeatTimestamp();
     assert.deepEqual(latest, null);
+
+    await engine.shutdown();
+  });
+});
+
+test("beatFilename - contains no ':' and round-trips", () => {
+  for (const ts of [
+    "2026-03-24T12:00:00.000Z",
+    "2025-01-15T08:30:45Z",
+    "2026-03-24T14:00:00+02:00",
+  ]) {
+    const name = beatFilename(ts);
+    assert.ok(!name.includes(":"), `${name} should not contain ':'`);
+    assert.ok(name.endsWith(".beat"));
+    assert.deepEqual(parseBeatFilename(name)!.toISOString(), new Date(ts).toISOString());
+  }
+});
+
+test("parseBeatFilename - still reads legacy names with ':'", () => {
+  assert.deepEqual(
+    parseBeatFilename("2026-03-24T12:00:00.000Z.beat")!.toISOString(),
+    "2026-03-24T12:00:00.000Z",
+  );
+  assert.deepEqual(parseBeatFilename("notes.txt"), null);
+  assert.deepEqual(parseBeatFilename("garbage.beat"), null);
+});
+
+test("GitEngine - beat files are written without ':' in the name", async () => {
+  await withTempRepo(async (dir) => {
+    const engine = new GitEngine(dir, { skipPush: true });
+    await engine.initLocal();
+
+    await engine.commitEvent({ timestamp: "2026-03-24T12:05:00.000Z", bpm: 99, kind: "custom" });
+
+    const files = await git(["ls-files", "beats"], dir);
+    assert.deepEqual(files, "beats/2026-03-24T12-05-00.000Z.beat");
 
     await engine.shutdown();
   });

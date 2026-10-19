@@ -25,6 +25,30 @@ export type CommitEntry =
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * Filename for a beat at the given timestamp. ':' is not allowed in Windows
+ * filenames, so it is replaced with '-' (e.g. 2026-03-24T12-00-00.000Z.beat).
+ */
+export function beatFilename(timestamp: string): string {
+  return `${timestamp.replaceAll(":", "-")}.beat`;
+}
+
+/**
+ * Parse the timestamp back out of a beat filename. Accepts both the
+ * filename-safe format and legacy names containing ':'.
+ */
+export function parseBeatFilename(name: string): Date | null {
+  if (!name.endsWith(".beat")) return null;
+  let ts = name.slice(0, -".beat".length);
+  const m = /^(\d{4}-\d{2}-\d{2}T\d{2})-(\d{2})(?:-(\d{2}(?:\.\d+)?))?(Z|[+-]\d{2}(?:-?\d{2})?)?$/.exec(ts);
+  if (m) {
+    const [, dateHour, minute, second, zone = ""] = m;
+    ts = `${dateHour}:${minute}${second ? `:${second}` : ""}${zone.replace(/^([+-]\d{2})-(\d{2})$/, "$1:$2")}`;
+  }
+  const date = new Date(ts);
+  return isNaN(date.getTime()) ? null : date;
+}
+
 export async function git(args: string[], cwd: string, env?: Record<string, string>): Promise<string> {
   try {
     const { stdout } = await execFileAsync("git", args, {
@@ -78,7 +102,7 @@ export class GitEngine {
   }
 
   async commitBaseline(data: BaselineData): Promise<void> {
-    const filename = `${data.timestamp}.beat`;
+    const filename = beatFilename(data.timestamp);
     const content = JSON.stringify({
       avg_bpm: data.avgBpm,
       min_bpm: data.minBpm,
@@ -100,7 +124,7 @@ export class GitEngine {
   }
 
   async commitEvent(data: EventData): Promise<void> {
-    const filename = `${data.timestamp}.beat`;
+    const filename = beatFilename(data.timestamp);
     const content = JSON.stringify({
       bpm: data.bpm,
       kind: data.kind,
@@ -199,7 +223,7 @@ export class GitEngine {
         commitMsg = `⚡ ${ed.bpm}bpm ${ed.kind} @ ${ts}`;
       }
 
-      const filename = `beats/${ts}.beat`;
+      const filename = `beats/${beatFilename(ts)}`;
       const mark = markNum++;
       const contentBytes = encoder.encode(fileContent);
 
@@ -296,9 +320,8 @@ export class GitEngine {
     try {
       for (const entry of await readdir(beatsDir, { withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.endsWith(".beat")) continue;
-        const tsStr = entry.name.replace(".beat", "");
-        const date = new Date(tsStr);
-        if (!isNaN(date.getTime()) && (latest === null || date > latest)) {
+        const date = parseBeatFilename(entry.name);
+        if (date !== null && (latest === null || date > latest)) {
           latest = date;
         }
       }
