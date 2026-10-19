@@ -21,20 +21,19 @@ export async function startCommand(): Promise<void> {
 
   const queue = new OfflineQueue();
 
-  // Replay any queued beats from previous sessions
-  const queued = await queue.drain();
-  if (queued.length > 0) {
-    console.log(`♥ Replaying ${queued.length} queued beat(s)...`);
-    for (const entry of queued) {
-      try {
-        if (entry.type === "baseline") {
-          await gitEngine.commitBaseline(entry.data);
-        } else {
-          await gitEngine.commitEvent(entry.data);
-        }
-      } catch (e) {
-        console.error(`Replay failed: ${e}`);
+  // Replay any queued beats from previous sessions; failures stay queued
+  const queuedCount = await queue.size();
+  if (queuedCount > 0) {
+    console.log(`♥ Replaying ${queuedCount} queued beat(s)...`);
+    const { failed } = await queue.process(async (entry) => {
+      if (entry.type === "baseline") {
+        await gitEngine.commitBaseline(entry.data);
+      } else {
+        await gitEngine.commitEvent(entry.data);
       }
+    });
+    for (const { error } of failed) {
+      console.error(`Replay failed, kept in queue: ${error}`);
     }
   }
 

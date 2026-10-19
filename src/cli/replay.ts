@@ -10,34 +10,31 @@ export async function replayCommand(): Promise<void> {
   }
 
   const queue = new OfflineQueue();
-  const entries = await queue.drain();
+  const total = await queue.size();
 
-  if (entries.length === 0) {
+  if (total === 0) {
     console.log("No queued beats to replay.");
     return;
   }
 
-  console.log(`♥ Replaying ${entries.length} queued beat(s)...`);
+  console.log(`♥ Replaying ${total} queued beat(s)...`);
 
   const gitEngine = new GitEngine();
   await gitEngine.init();
 
-  let ok = 0;
-  let failed = 0;
-  for (const entry of entries) {
-    try {
-      if (entry.type === "baseline") {
-        await gitEngine.commitBaseline(entry.data);
-      } else {
-        await gitEngine.commitEvent(entry.data);
-      }
-      ok++;
-    } catch (e) {
-      console.error(`Failed to replay entry: ${e}`);
-      failed++;
+  const { processed, failed } = await queue.process(async (entry) => {
+    if (entry.type === "baseline") {
+      await gitEngine.commitBaseline(entry.data);
+    } else {
+      await gitEngine.commitEvent(entry.data);
     }
+  });
+  for (const { error } of failed) {
+    console.error(`Failed to replay entry: ${error}`);
   }
 
   await gitEngine.shutdown();
-  console.log(`✓ Replayed ${ok} beat(s)${failed > 0 ? `, ${failed} failed` : ""}.`);
+  console.log(
+    `✓ Replayed ${processed} beat(s)${failed.length > 0 ? `, ${failed.length} failed (kept in queue)` : ""}.`,
+  );
 }
