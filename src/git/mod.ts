@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { repoDir, loadConfig } from "../config/mod.ts";
 
@@ -64,16 +64,44 @@ export async function git(args: string[], cwd: string, env?: Record<string, stri
   }
 }
 
+export type GitRunner = typeof git;
+
+/**
+ * Tail of the operation chain per repo directory. Git operations on the same
+ * repo must not overlap (they race on .git/index.lock), so each one waits for
+ * the previous one to settle before starting.
+ */
+const repoLocks = new Map<string, Promise<unknown>>();
+
+function withRepoLock<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+  const key = resolve(dir);
+  const prev = repoLocks.get(key) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  const tail = run.then(() => {}, () => {});
+  repoLocks.set(key, tail);
+  tail.then(() => {
+    if (repoLocks.get(key) === tail) repoLocks.delete(key);
+  });
+  return run;
+}
+
 export class GitEngine {
   private dir: string;
   private pendingCommits = 0;
   private pushIntervalMs = 10_000;
   private pushTimer: ReturnType<typeof setInterval> | undefined;
   private skipPush: boolean;
+  private git: GitRunner;
 
-  constructor(dir?: string, opts?: { skipPush?: boolean }) {
+  constructor(dir?: string, opts?: { skipPush?: boolean; runGit?: GitRunner }) {
     this.dir = dir ?? repoDir();
     this.skipPush = opts?.skipPush ?? false;
+    this.git = opts?.runGit ?? git;
+  }
+
+  /** Run `fn` with exclusive access to this repo's git state. */
+  private exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    return withRepoLock(this.dir, fn);
   }
 
   async init(): Promise<void> {
@@ -88,7 +116,7 @@ export class GitEngine {
         "https://",
         `https://${config.githubPat}@`,
       );
-      await git(["clone", authUrl, "."], this.dir);
+      await this.exclusive(() => this.git(["clone", authUrl, "."], this.dir));
     }
 
     await this.initLocal();
@@ -101,7 +129,11 @@ export class GitEngine {
     }
   }
 
-  async commitBaseline(data: BaselineData): Promise<void> {
+  commitBaseline(data: BaselineData): Promise<void> {
+    return this.exclusive(() => this.commitBaselineUnlocked(data));
+  }
+
+  private async commitBaselineUnlocked(data: BaselineData): Promise<void> {
     const filename = beatFilename(data.timestamp);
     const content = JSON.stringify({
       avg_bpm: data.avgBpm,
@@ -111,8 +143,8 @@ export class GitEngine {
     }, null, 2) + "\n";
 
     await writeFile(join(this.dir, "beats", filename), content);
-    await git(["add", join("beats", filename)], this.dir);
-    await git(
+    await this.git(["add", join("beats", filename)], this.dir);
+    await this.git(
       ["commit", "-m", `♥ ${data.avgBpm}bpm @ ${data.timestamp}`],
       this.dir,
       {
@@ -123,7 +155,11 @@ export class GitEngine {
     this.pendingCommits++;
   }
 
-  async commitEvent(data: EventData): Promise<void> {
+  commitEvent(data: EventData): Promise<void> {
+    return this.exclusive(() => this.commitEventUnlocked(data));
+  }
+
+  private async commitEventUnlocked(data: EventData): Promise<void> {
     const filename = beatFilename(data.timestamp);
     const content = JSON.stringify({
       bpm: data.bpm,
@@ -131,8 +167,8 @@ export class GitEngine {
     }, null, 2) + "\n";
 
     await writeFile(join(this.dir, "beats", filename), content);
-    await git(["add", join("beats", filename)], this.dir);
-    await git(
+    await this.git(["add", join("beats", filename)], this.dir);
+    await this.git(
       ["commit", "-m", `⚡ ${data.bpm}bpm ${data.kind} @ ${data.timestamp}`],
       this.dir,
       {
@@ -147,21 +183,25 @@ export class GitEngine {
    * Bulk-import commits using `git fast-import`. Streams directly to the
    * process to avoid buffering everything in memory.
    */
-  async fastImport(entries: CommitEntry[], onProgress?: (done: number, total: number) => void): Promise<void> {
+  fastImport(entries: CommitEntry[], onProgress?: (done: number, total: number) => void): Promise<void> {
+    return this.exclusive(() => this.fastImportUnlocked(entries, onProgress));
+  }
+
+  private async fastImportUnlocked(entries: CommitEntry[], onProgress?: (done: number, total: number) => void): Promise<void> {
     if (entries.length === 0) return;
 
-    const branch = (await git(["rev-parse", "--abbrev-ref", "HEAD"], this.dir)) || "main";
+    const branch = (await this.git(["rev-parse", "--abbrev-ref", "HEAD"], this.dir)) || "main";
     let parentRef: string | null = null;
     try {
-      parentRef = await git(["rev-parse", "HEAD"], this.dir);
+      parentRef = await this.git(["rev-parse", "HEAD"], this.dir);
     } catch { /* empty repo */ }
 
     const existingFiles = await this.readTrackedFiles();
 
     let userName = "Cora";
     let userEmail = "cora@heartbeat";
-    try { userName = await git(["config", "user.name"], this.dir); } catch { /* */ }
-    try { userEmail = await git(["config", "user.email"], this.dir); } catch { /* */ }
+    try { userName = await this.git(["config", "user.name"], this.dir); } catch { /* */ }
+    try { userEmail = await this.git(["config", "user.email"], this.dir); } catch { /* */ }
 
     // Spawn fast-import and stream to it
     const child = spawn("git", ["fast-import", "--done", "--quiet"], {
@@ -266,7 +306,7 @@ export class GitEngine {
       throw new Error(`git fast-import failed: ${err}`);
     }
 
-    await git(["checkout", "-f", branch], this.dir);
+    await this.git(["checkout", "-f", branch], this.dir);
     this.pendingCommits += entries.length;
     if (onProgress) onProgress(entries.length, entries.length);
   }
@@ -274,7 +314,7 @@ export class GitEngine {
   private async readTrackedFiles(): Promise<Map<string, Uint8Array>> {
     const files = new Map<string, Uint8Array>();
     try {
-      const output = await git(["ls-files"], this.dir);
+      const output = await this.git(["ls-files"], this.dir);
       if (!output) return files;
       for (const filePath of output.split("\n")) {
         if (!filePath) continue;
@@ -285,16 +325,20 @@ export class GitEngine {
     return files;
   }
 
-  async flush(): Promise<void> {
+  flush(): Promise<void> {
+    return this.exclusive(() => this.flushUnlocked());
+  }
+
+  private async flushUnlocked(): Promise<void> {
     if (this.pendingCommits === 0) return;
     try {
-      await git(["push"], this.dir);
+      await this.git(["push"], this.dir);
       this.pendingCommits = 0;
     } catch {
       // Push failed, likely non-fast-forward — pull and retry
       try {
-        await git(["pull", "--rebase"], this.dir);
-        await git(["push"], this.dir);
+        await this.git(["pull", "--rebase"], this.dir);
+        await this.git(["push"], this.dir);
         this.pendingCommits = 0;
       } catch (e) {
         console.error(`Push failed after pull --rebase (${this.pendingCommits} commits queued): ${e}`);

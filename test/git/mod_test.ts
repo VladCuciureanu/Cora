@@ -220,3 +220,70 @@ test("GitEngine - beat files are written without ':' in the name", async () => {
     await engine.shutdown();
   });
 });
+
+test("GitEngine - concurrent git operations run one at a time", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "cora-lock-test-"));
+  try {
+    let active = 0;
+    let maxActive = 0;
+    const calls: string[] = [];
+    const runGit = async (args: string[]): Promise<string> => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      calls.push(args[0]);
+      await new Promise((r) => setTimeout(r, 5));
+      active--;
+      return "";
+    };
+
+    const engine = new GitEngine(dir, { skipPush: true, runGit });
+    // A second engine on the same repo must share the lock
+    const other = new GitEngine(dir, { skipPush: true, runGit });
+    await engine.initLocal();
+
+    await Promise.all([
+      engine.commitBaseline({ timestamp: "2026-03-24T12:00:00.000Z", avgBpm: 70, minBpm: 65, maxBpm: 75, beatCount: 10 }),
+      engine.commitEvent({ timestamp: "2026-03-24T12:01:00.000Z", bpm: 120, kind: "spike" }),
+      other.commitBaseline({ timestamp: "2026-03-24T12:02:00.000Z", avgBpm: 72, minBpm: 66, maxBpm: 78, beatCount: 12 }),
+      engine.flush(),
+      engine.commitEvent({ timestamp: "2026-03-24T12:03:00.000Z", bpm: 40, kind: "drop" }),
+      engine.flush(),
+    ]);
+
+    assert.deepEqual(maxActive, 1);
+    // Each operation's add+commit pair stays together; the first flush runs
+    // after two commits, the second after the last commit.
+    assert.deepEqual(calls, ["add", "commit", "add", "commit", "add", "commit", "push", "add", "commit", "push"]);
+
+    await engine.shutdown();
+    await other.shutdown();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("GitEngine - a failing git operation does not block later ones", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "cora-lock-test-"));
+  try {
+    let fail = true;
+    const runGit = async (args: string[]): Promise<string> => {
+      if (fail && args[0] === "commit") {
+        fail = false;
+        throw new Error("git commit failed: boom");
+      }
+      return "";
+    };
+    const engine = new GitEngine(dir, { skipPush: true, runGit });
+    await engine.initLocal();
+
+    const results = await Promise.allSettled([
+      engine.commitEvent({ timestamp: "2026-03-24T12:00:00.000Z", bpm: 120, kind: "spike" }),
+      engine.commitEvent({ timestamp: "2026-03-24T12:01:00.000Z", bpm: 121, kind: "spike" }),
+    ]);
+    assert.deepEqual(results.map((r) => r.status), ["rejected", "fulfilled"]);
+
+    await engine.shutdown();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
