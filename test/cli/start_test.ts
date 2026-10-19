@@ -1,26 +1,36 @@
-import { assertEquals } from "jsr:@std/assert";
-import { join } from "@std/path";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
 import { GitEngine, git } from "../../src/git/mod.ts";
 import { BeatBuffer } from "../../src/beats/mod.ts";
 import { OfflineQueue } from "../../src/queue/mod.ts";
 import type { BaselineData, EventData } from "../../src/git/mod.ts";
 
+async function makeTempFile(suffix: string): Promise<string> {
+  const file = join(tmpdir(), `cora-${randomUUID()}${suffix}`);
+  await writeFile(file, "");
+  return file;
+}
+
 async function withTempRepo(fn: (dir: string) => Promise<void>) {
-  const dir = await Deno.makeTempDir({ prefix: "cora-start-test-" });
+  const dir = await mkdtemp(join(tmpdir(), "cora-start-test-"));
   await git(["init"], dir);
   await git(["config", "user.email", "test@test.com"], dir);
   await git(["config", "user.name", "Test"], dir);
-  await Deno.writeTextFile(join(dir, ".gitkeep"), "");
+  await writeFile(join(dir, ".gitkeep"), "");
   await git(["add", ".gitkeep"], dir);
   await git(["commit", "-m", "init"], dir);
   try {
     await fn(dir);
   } finally {
-    await Deno.remove(dir, { recursive: true });
+    await rm(dir, { recursive: true, force: true });
   }
 }
 
-Deno.test("start - beat buffer feeds into git engine", async () => {
+test("start - beat buffer feeds into git engine", async () => {
   await withTempRepo(async (dir) => {
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.initLocal();
@@ -50,17 +60,17 @@ Deno.test("start - beat buffer feeds into git engine", async () => {
     }
     await buffer.flushWindow();
 
-    assertEquals(commits, ["baseline"]);
+    assert.deepEqual(commits, ["baseline"]);
 
     const count = await git(["rev-list", "--count", "HEAD"], dir);
-    assertEquals(count, "2"); // init + baseline
+    assert.deepEqual(count, "2"); // init + baseline
 
     await engine.shutdown();
   });
 });
 
-Deno.test("start - failed commits are queued offline", async () => {
-  const queueFile = await Deno.makeTempFile({ suffix: ".jsonl" });
+test("start - failed commits are queued offline", async () => {
+  const queueFile = await makeTempFile(".jsonl");
   const queue = new OfflineQueue(queueFile);
 
   // Simulate a commit failure by queuing directly
@@ -75,16 +85,16 @@ Deno.test("start - failed commits are queued offline", async () => {
   await queue.enqueue({ type: "baseline", data: baselineData });
 
   const entries = await queue.drain();
-  assertEquals(entries.length, 1);
-  assertEquals(entries[0].type, "baseline");
-  assertEquals((entries[0].data as BaselineData).avgBpm, 72);
+  assert.deepEqual(entries.length, 1);
+  assert.deepEqual(entries[0].type, "baseline");
+  assert.deepEqual((entries[0].data as BaselineData).avgBpm, 72);
 
-  await Deno.remove(queueFile);
+  await rm(queueFile);
 });
 
-Deno.test("start - queued beats are replayed on startup", async () => {
+test("start - queued beats are replayed on startup", async () => {
   await withTempRepo(async (dir) => {
-    const queueFile = await Deno.makeTempFile({ suffix: ".jsonl" });
+    const queueFile = await makeTempFile(".jsonl");
     const queue = new OfflineQueue(queueFile);
 
     // Queue some beats as if previous session failed to push
@@ -121,17 +131,17 @@ Deno.test("start - queued beats are replayed on startup", async () => {
     }
 
     const count = await git(["rev-list", "--count", "HEAD"], dir);
-    assertEquals(count, "3"); // init + 2 replayed
+    assert.deepEqual(count, "3"); // init + 2 replayed
 
     // Queue should be empty
-    assertEquals(await queue.size(), 0);
+    assert.deepEqual(await queue.size(), 0);
 
     await engine.shutdown();
-    await Deno.remove(queueFile);
+    await rm(queueFile);
   });
 });
 
-Deno.test("start - event detection triggers immediate commit", async () => {
+test("start - event detection triggers immediate commit", async () => {
   await withTempRepo(async (dir) => {
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.initLocal();
@@ -163,24 +173,24 @@ Deno.test("start - event detection triggers immediate commit", async () => {
       rrIntervals: [],
     });
 
-    assertEquals(events.length, 1);
-    assertEquals(events[0].kind, "spike");
+    assert.deepEqual(events.length, 1);
+    assert.deepEqual(events[0].kind, "spike");
 
     // Verify the event was committed
     const log = await git(["log", "-1", "--format=%s"], dir);
-    assertEquals(log.includes("150bpm"), true);
+    assert.deepEqual(log.includes("150bpm"), true);
 
     await engine.shutdown();
   });
 });
 
-Deno.test("start - PID file is written and readable", async () => {
-  const tmp = await Deno.makeTempDir({ prefix: "cora-pid-test-" });
+test("start - PID file is written and readable", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "cora-pid-test-"));
   const pidFile = join(tmp, "cora.pid");
 
-  await Deno.writeTextFile(pidFile, String(Deno.pid));
-  const text = await Deno.readTextFile(pidFile);
-  assertEquals(parseInt(text.trim(), 10), Deno.pid);
+  await writeFile(pidFile, String(process.pid));
+  const text = await readFile(pidFile, "utf8");
+  assert.deepEqual(parseInt(text.trim(), 10), process.pid);
 
-  await Deno.remove(tmp, { recursive: true });
+  await rm(tmp, { recursive: true, force: true });
 });

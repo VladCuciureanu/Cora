@@ -1,4 +1,22 @@
+import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { BeatBuffer, BeatSample } from "../beats/mod.ts";
+
+/** Adapt a node:http request to a Web-standard Request so the handler stays fetch-style. */
+async function toWebRequest(req: IncomingMessage, hostname: string): Promise<Request> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (value === undefined) continue;
+    for (const v of Array.isArray(value) ? value : [value]) headers.append(key, v);
+  }
+  const method = req.method ?? "GET";
+  return new Request(`http://${req.headers.host ?? hostname}${req.url ?? "/"}`, {
+    method,
+    headers,
+    body: method === "GET" || method === "HEAD" ? undefined : Buffer.concat(chunks),
+  });
+}
 
 interface BeatPayload {
   timestamp: string;
@@ -11,7 +29,7 @@ export class IngestionServer {
   private apiKey: string;
   private port: number;
   private seenTimestamps = new Set<string>();
-  private controller: AbortController | null = null;
+  private server: Server | null = null;
 
   constructor(buffer: BeatBuffer, apiKey: string, port: number) {
     this.buffer = buffer;
@@ -20,17 +38,26 @@ export class IngestionServer {
   }
 
   start(): void {
-    this.controller = new AbortController();
-    Deno.serve(
-      { port: this.port, signal: this.controller.signal, onListen: ({ hostname, port }) => {
-        console.log(`♥ Listening on http://${hostname}:${port}`);
-      }},
-      (req) => this.handle(req),
-    );
+    const hostname = "0.0.0.0";
+    this.server = createServer(async (incoming, outgoing) => {
+      try {
+        const res = await this.handle(await toWebRequest(incoming, hostname));
+        outgoing.writeHead(res.status, Object.fromEntries(res.headers));
+        outgoing.end(Buffer.from(await res.arrayBuffer()));
+      } catch (e) {
+        console.error(e);
+        if (!outgoing.headersSent) outgoing.writeHead(500);
+        outgoing.end("Internal Server Error");
+      }
+    });
+    this.server.listen(this.port, hostname, () => {
+      console.log(`♥ Listening on http://${hostname}:${this.port}`);
+    });
   }
 
   stop(): void {
-    this.controller?.abort();
+    this.server?.close();
+    this.server?.closeAllConnections();
   }
 
   private async handle(req: Request): Promise<Response> {

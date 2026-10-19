@@ -1,22 +1,24 @@
-import { assertEquals, assertNotEquals } from "jsr:@std/assert";
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
 import { generateApiKey, type CoraConfig } from "../../src/config/mod.ts";
-import { join } from "@std/path";
-import { ensureDir } from "@std/fs";
 
-Deno.test("generateApiKey - returns 64-char hex string", () => {
+test("generateApiKey - returns 64-char hex string", () => {
   const key = generateApiKey();
-  assertEquals(key.length, 64);
-  assertEquals(/^[0-9a-f]+$/.test(key), true);
+  assert.deepEqual(key.length, 64);
+  assert.deepEqual(/^[0-9a-f]+$/.test(key), true);
 });
 
-Deno.test("generateApiKey - generates unique keys", () => {
+test("generateApiKey - generates unique keys", () => {
   const key1 = generateApiKey();
   const key2 = generateApiKey();
-  assertNotEquals(key1, key2);
+  assert.notDeepEqual(key1, key2);
 });
 
-Deno.test("config - save and load roundtrip", async () => {
-  const tmpDir = await Deno.makeTempDir({ prefix: "cora-config-test-" });
+test("config - save and load roundtrip", async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), "cora-config-test-"));
   const configPath = join(tmpDir, "config.json");
 
   const config: CoraConfig = {
@@ -29,36 +31,36 @@ Deno.test("config - save and load roundtrip", async () => {
   };
 
   // Save
-  await ensureDir(tmpDir);
-  await Deno.writeTextFile(configPath, JSON.stringify(config, null, 2) + "\n");
+  await mkdir(tmpDir, { recursive: true });
+  await writeFile(configPath, JSON.stringify(config, null, 2) + "\n");
 
   // Load
-  const text = await Deno.readTextFile(configPath);
+  const text = await readFile(configPath, "utf8");
   const loaded: CoraConfig = JSON.parse(text);
 
-  assertEquals(loaded.githubPat, config.githubPat);
-  assertEquals(loaded.repoUrl, config.repoUrl);
-  assertEquals(loaded.apiKey, config.apiKey);
-  assertEquals(loaded.commitIntervalMs, config.commitIntervalMs);
-  assertEquals(loaded.eventThresholdPercent, config.eventThresholdPercent);
-  assertEquals(loaded.port, config.port);
+  assert.deepEqual(loaded.githubPat, config.githubPat);
+  assert.deepEqual(loaded.repoUrl, config.repoUrl);
+  assert.deepEqual(loaded.apiKey, config.apiKey);
+  assert.deepEqual(loaded.commitIntervalMs, config.commitIntervalMs);
+  assert.deepEqual(loaded.eventThresholdPercent, config.eventThresholdPercent);
+  assert.deepEqual(loaded.port, config.port);
 
-  await Deno.remove(tmpDir, { recursive: true });
+  await rm(tmpDir, { recursive: true, force: true });
 });
 
-Deno.test("config - load returns all fields", async () => {
-  const tmpDir = await Deno.makeTempDir({ prefix: "cora-config-test-" });
+test("config - load returns all fields", async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), "cora-config-test-"));
   const configPath = join(tmpDir, "config.json");
 
   const partial = { githubPat: "ghp_x", repoUrl: "https://x", apiKey: "key" };
-  await Deno.writeTextFile(configPath, JSON.stringify(partial));
+  await writeFile(configPath, JSON.stringify(partial));
 
-  const text = await Deno.readTextFile(configPath);
+  const text = await readFile(configPath, "utf8");
   const loaded = JSON.parse(text);
 
-  assertEquals(loaded.githubPat, "ghp_x");
-  assertEquals(loaded.repoUrl, "https://x");
-  assertEquals(loaded.apiKey, "key");
+  assert.deepEqual(loaded.githubPat, "ghp_x");
+  assert.deepEqual(loaded.repoUrl, "https://x");
+  assert.deepEqual(loaded.apiKey, "key");
 
-  await Deno.remove(tmpDir, { recursive: true });
+  await rm(tmpDir, { recursive: true, force: true });
 });

@@ -21,20 +21,22 @@ Each commit creates a `beats/{timestamp}.beat` file with BPM, R-R intervals, and
 
 ### Prerequisites
 
-- [Deno](https://deno.land) v2+
+- [Node.js](https://nodejs.org) 24+ (see `.nvmrc`) and `git` on your `PATH`
 - A GitHub account and personal access token
 - An Apple Watch + iPhone (for real data) or use `cora mock` for simulation
 
 ### Install
 
 ```sh
-# Clone and compile
+# Clone, build, and link the `cora` command globally
 git clone https://github.com/VladCuciureanu/Cora.git
 cd Cora
-deno task compile
+npm install
+npm run build
+npm link
 
-# Or install globally
-deno install --global --name cora --allow-net --allow-read --allow-write --allow-run=git --allow-env src/main.ts
+# Or run straight from source without installing
+npm start -- --help
 ```
 
 ### Initialize
@@ -87,7 +89,8 @@ Apple Watch → iOS Shortcut → POST /beat → BeatBuffer → GitEngine → Git
 ## Development
 
 ```sh
-deno task dev          # Watch mode
-deno task test         # Run tests
-deno task compile:all  # Build for all platforms (macOS/Linux, x86/ARM)
+npm run dev            # Watch mode (node --watch)
+npm test               # Run tests (node:test)
+npm run typecheck      # Type-check with tsc
+npm run build          # Emit dist/ for the `cora` bin
 ```

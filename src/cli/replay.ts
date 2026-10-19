@@ -6,7 +6,7 @@ export async function replayCommand(): Promise<void> {
   const config = await loadConfig();
   if (!config) {
     console.error("No config found. Run `cora init` first.");
-    Deno.exit(1);
+    process.exit(1);
   }
 
   const queue = new OfflineQueue();

@@ -1,5 +1,5 @@
-import { join } from "@std/path";
-import { ensureDir } from "@std/fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 export interface CoraConfig {
   githubPat: string;
@@ -17,7 +17,7 @@ const DEFAULTS: Pick<CoraConfig, "commitIntervalMs" | "eventThresholdPercent" | 
 };
 
 function configDir(): string {
-  const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? ".";
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? ".";
   return join(home, ".config", "cora");
 }
 
@@ -39,7 +39,7 @@ export function queuePath(): string {
 
 export async function loadConfig(): Promise<CoraConfig | null> {
   try {
-    const text = await Deno.readTextFile(configPath());
+    const text = await readFile(configPath(), "utf8");
     return { ...DEFAULTS, ...JSON.parse(text) };
   } catch {
     return null;
@@ -47,8 +47,8 @@ export async function loadConfig(): Promise<CoraConfig | null> {
 }
 
 export async function saveConfig(config: CoraConfig): Promise<void> {
-  await ensureDir(configDir());
-  await Deno.writeTextFile(configPath(), JSON.stringify(config, null, 2) + "\n");
+  await mkdir(configDir(), { recursive: true });
+  await writeFile(configPath(), JSON.stringify(config, null, 2) + "\n");
 }
 
 export function generateApiKey(): string {

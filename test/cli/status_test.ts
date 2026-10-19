@@ -1,52 +1,55 @@
-import { assertEquals } from "jsr:@std/assert";
-import { join } from "@std/path";
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
 
-Deno.test("status - PID file contains valid integer", async () => {
-  const tmp = await Deno.makeTempDir({ prefix: "cora-status-test-" });
+test("status - PID file contains valid integer", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "cora-status-test-"));
   const pidFile = join(tmp, "cora.pid");
 
-  await Deno.writeTextFile(pidFile, String(Deno.pid));
-  const text = await Deno.readTextFile(pidFile);
+  await writeFile(pidFile, String(process.pid));
+  const text = await readFile(pidFile, "utf8");
   const pid = parseInt(text.trim(), 10);
-  assertEquals(pid, Deno.pid);
-  assertEquals(Number.isInteger(pid), true);
+  assert.deepEqual(pid, process.pid);
+  assert.deepEqual(Number.isInteger(pid), true);
 
-  await Deno.remove(tmp, { recursive: true });
+  await rm(tmp, { recursive: true, force: true });
 });
 
-Deno.test("status - detects dead process via kill", () => {
+test("status - detects dead process via kill", () => {
   // Use a PID that doesn't exist
   let alive = false;
   try {
-    Deno.kill(2147483647, "SIGCONT");
+    process.kill(2147483647, 0);
     alive = true;
   } catch {
     alive = false;
   }
-  assertEquals(alive, false);
+  assert.deepEqual(alive, false);
 });
 
-Deno.test("status - missing PID file means not running", async () => {
-  const tmp = await Deno.makeTempDir({ prefix: "cora-status-test-" });
+test("status - missing PID file means not running", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "cora-status-test-"));
   const pidFile = join(tmp, "nonexistent.pid");
 
   let running = false;
   try {
-    await Deno.readTextFile(pidFile);
+    await readFile(pidFile, "utf8");
     running = true;
   } catch {
     running = false;
   }
-  assertEquals(running, false);
+  assert.deepEqual(running, false);
 
-  await Deno.remove(tmp, { recursive: true });
+  await rm(tmp, { recursive: true, force: true });
 });
 
-Deno.test("status - health endpoint parsing", () => {
+test("status - health endpoint parsing", () => {
   const mockResponse = { status: "alive", bpm: 72 };
-  assertEquals(mockResponse.bpm, 72);
-  assertEquals(mockResponse.status, "alive");
+  assert.deepEqual(mockResponse.bpm, 72);
+  assert.deepEqual(mockResponse.status, "alive");
 
   const nullBpmResponse = { status: "alive", bpm: null };
-  assertEquals(nullBpmResponse.bpm ?? "no data yet", "no data yet");
+  assert.deepEqual(nullBpmResponse.bpm ?? "no data yet", "no data yet");
 });

@@ -1,19 +1,20 @@
+import { readFile } from "node:fs/promises";
 import { loadConfig, pidPath } from "../config/mod.ts";
 
 export async function statusCommand(): Promise<void> {
   const config = await loadConfig();
   if (!config) {
     console.error("No config found. Run `cora init` first.");
-    Deno.exit(1);
+    process.exit(1);
   }
 
   // Check if process is running
   let running = false;
   let pid: number | null = null;
   try {
-    const text = await Deno.readTextFile(pidPath());
+    const text = await readFile(pidPath(), "utf8");
     pid = parseInt(text.trim(), 10);
-    Deno.kill(pid, "SIGCONT"); // check if process exists
+    process.kill(pid, 0); // check if process exists
     running = true;
   } catch {
     running = false;

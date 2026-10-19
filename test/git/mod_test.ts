@@ -1,24 +1,31 @@
-import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { join } from "@std/path";
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, stat as fsStat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
 import { GitEngine, git } from "../../src/git/mod.ts";
 
+function assertIncludes(actual: string, expected: string): void {
+  assert.ok(actual.includes(expected), `Expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`);
+}
+
 async function withTempRepo(fn: (dir: string) => Promise<void>) {
-  const dir = await Deno.makeTempDir({ prefix: "cora-test-" });
+  const dir = await mkdtemp(join(tmpdir(), "cora-test-"));
   await git(["init"], dir);
   await git(["config", "user.email", "test@test.com"], dir);
   await git(["config", "user.name", "Test"], dir);
   // Need an initial commit for git log to work
-  await Deno.writeTextFile(join(dir, ".gitkeep"), "");
+  await writeFile(join(dir, ".gitkeep"), "");
   await git(["add", ".gitkeep"], dir);
   await git(["commit", "-m", "init"], dir);
   try {
     await fn(dir);
   } finally {
-    await Deno.remove(dir, { recursive: true });
+    await rm(dir, { recursive: true, force: true });
   }
 }
 
-Deno.test("GitEngine - commitBaseline creates beat file and commit", async () => {
+test("GitEngine - commitBaseline creates beat file and commit", async () => {
   await withTempRepo(async (dir) => {
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.initLocal();
@@ -33,23 +40,23 @@ Deno.test("GitEngine - commitBaseline creates beat file and commit", async () =>
     });
 
     // Verify file exists
-    const content = await Deno.readTextFile(join(dir, "beats", `${ts}.beat`));
+    const content = await readFile(join(dir, "beats", `${ts}.beat`), "utf8");
     const data = JSON.parse(content);
-    assertEquals(data.avg_bpm, 72);
-    assertEquals(data.min_bpm, 60);
-    assertEquals(data.max_bpm, 85);
-    assertEquals(data.beat_count, 15);
+    assert.deepEqual(data.avg_bpm, 72);
+    assert.deepEqual(data.min_bpm, 60);
+    assert.deepEqual(data.max_bpm, 85);
+    assert.deepEqual(data.beat_count, 15);
 
     // Verify commit message
     const log = await git(["log", "-1", "--format=%s"], dir);
-    assertStringIncludes(log, "♥ 72bpm");
-    assertStringIncludes(log, ts);
+    assertIncludes(log, "♥ 72bpm");
+    assertIncludes(log, ts);
 
     await engine.shutdown();
   });
 });
 
-Deno.test("GitEngine - commitEvent creates beat file and commit", async () => {
+test("GitEngine - commitEvent creates beat file and commit", async () => {
   await withTempRepo(async (dir) => {
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.initLocal();
@@ -61,19 +68,19 @@ Deno.test("GitEngine - commitEvent creates beat file and commit", async () => {
       kind: "spike",
     });
 
-    const content = await Deno.readTextFile(join(dir, "beats", `${ts}.beat`));
+    const content = await readFile(join(dir, "beats", `${ts}.beat`), "utf8");
     const data = JSON.parse(content);
-    assertEquals(data.bpm, 140);
-    assertEquals(data.kind, "spike");
+    assert.deepEqual(data.bpm, 140);
+    assert.deepEqual(data.kind, "spike");
 
     const log = await git(["log", "-1", "--format=%s"], dir);
-    assertStringIncludes(log, "⚡ 140bpm spike");
+    assertIncludes(log, "⚡ 140bpm spike");
 
     await engine.shutdown();
   });
 });
 
-Deno.test("GitEngine - commit uses custom author date", async () => {
+test("GitEngine - commit uses custom author date", async () => {
   await withTempRepo(async (dir) => {
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.initLocal();
@@ -88,13 +95,13 @@ Deno.test("GitEngine - commit uses custom author date", async () => {
     });
 
     const authorDate = await git(["log", "-1", "--format=%aI"], dir);
-    assertStringIncludes(authorDate, "2025-01-15");
+    assertIncludes(authorDate, "2025-01-15");
 
     await engine.shutdown();
   });
 });
 
-Deno.test("GitEngine - multiple commits create sequential history", async () => {
+test("GitEngine - multiple commits create sequential history", async () => {
   await withTempRepo(async (dir) => {
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.initLocal();
@@ -123,25 +130,25 @@ Deno.test("GitEngine - multiple commits create sequential history", async () => 
 
     // init commit + 3 cora commits = 4
     const count = await git(["rev-list", "--count", "HEAD"], dir);
-    assertEquals(count, "4");
+    assert.deepEqual(count, "4");
 
     await engine.shutdown();
   });
 });
 
-Deno.test("GitEngine - initLocal creates beats directory", async () => {
+test("GitEngine - initLocal creates beats directory", async () => {
   await withTempRepo(async (dir) => {
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.initLocal();
 
-    const stat = await Deno.stat(join(dir, "beats"));
-    assertEquals(stat.isDirectory, true);
+    const stat = await fsStat(join(dir, "beats"));
+    assert.deepEqual(stat.isDirectory(), true);
 
     await engine.shutdown();
   });
 });
 
-Deno.test("GitEngine - getLatestBeatTimestamp returns latest", async () => {
+test("GitEngine - getLatestBeatTimestamp returns latest", async () => {
   await withTempRepo(async (dir) => {
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.initLocal();
@@ -160,19 +167,19 @@ Deno.test("GitEngine - getLatestBeatTimestamp returns latest", async () => {
     });
 
     const latest = await engine.getLatestBeatTimestamp();
-    assertEquals(latest!.toISOString(), "2026-03-15T14:30:00.000Z");
+    assert.deepEqual(latest!.toISOString(), "2026-03-15T14:30:00.000Z");
 
     await engine.shutdown();
   });
 });
 
-Deno.test("GitEngine - getLatestBeatTimestamp returns null when empty", async () => {
+test("GitEngine - getLatestBeatTimestamp returns null when empty", async () => {
   await withTempRepo(async (dir) => {
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.initLocal();
 
     const latest = await engine.getLatestBeatTimestamp();
-    assertEquals(latest, null);
+    assert.deepEqual(latest, null);
 
     await engine.shutdown();
   });

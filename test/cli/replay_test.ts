@@ -1,26 +1,40 @@
-import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { join } from "@std/path";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
 import { GitEngine, git } from "../../src/git/mod.ts";
 import { OfflineQueue } from "../../src/queue/mod.ts";
 
+function assertIncludes(actual: string, expected: string): void {
+  assert.ok(actual.includes(expected), `Expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`);
+}
+
+async function makeTempFile(suffix: string): Promise<string> {
+  const file = join(tmpdir(), `cora-${randomUUID()}${suffix}`);
+  await writeFile(file, "");
+  return file;
+}
+
 async function withTempRepo(fn: (dir: string) => Promise<void>) {
-  const dir = await Deno.makeTempDir({ prefix: "cora-replay-test-" });
+  const dir = await mkdtemp(join(tmpdir(), "cora-replay-test-"));
   await git(["init"], dir);
   await git(["config", "user.email", "test@test.com"], dir);
   await git(["config", "user.name", "Test"], dir);
-  await Deno.writeTextFile(join(dir, ".gitkeep"), "");
+  await writeFile(join(dir, ".gitkeep"), "");
   await git(["add", ".gitkeep"], dir);
   await git(["commit", "-m", "init"], dir);
   try {
     await fn(dir);
   } finally {
-    await Deno.remove(dir, { recursive: true });
+    await rm(dir, { recursive: true, force: true });
   }
 }
 
-Deno.test("replay - drains queue and commits all entries", async () => {
+test("replay - drains queue and commits all entries", async () => {
   await withTempRepo(async (dir) => {
-    const queueFile = await Deno.makeTempFile({ suffix: ".jsonl" });
+    const queueFile = await makeTempFile(".jsonl");
     const queue = new OfflineQueue(queueFile);
 
     await queue.enqueue({
@@ -52,7 +66,7 @@ Deno.test("replay - drains queue and commits all entries", async () => {
       },
     });
 
-    assertEquals(await queue.size(), 3);
+    assert.deepEqual(await queue.size(), 3);
 
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.initLocal();
@@ -68,40 +82,40 @@ Deno.test("replay - drains queue and commits all entries", async () => {
       ok++;
     }
 
-    assertEquals(ok, 3);
-    assertEquals(await queue.size(), 0);
+    assert.deepEqual(ok, 3);
+    assert.deepEqual(await queue.size(), 0);
 
     // Verify commits exist with correct messages
     const count = await git(["rev-list", "--count", "HEAD"], dir);
-    assertEquals(count, "4"); // init + 3 replayed
+    assert.deepEqual(count, "4"); // init + 3 replayed
 
     const log = await git(["log", "--format=%s"], dir);
-    assertStringIncludes(log, "♥ 68bpm");
-    assertStringIncludes(log, "⚡ 45bpm drop");
-    assertStringIncludes(log, "♥ 72bpm");
+    assertIncludes(log, "♥ 68bpm");
+    assertIncludes(log, "⚡ 45bpm drop");
+    assertIncludes(log, "♥ 72bpm");
 
     await engine.shutdown();
-    await Deno.remove(queueFile);
+    await rm(queueFile);
   });
 });
 
-Deno.test("replay - empty queue results in no commits", async () => {
+test("replay - empty queue results in no commits", async () => {
   await withTempRepo(async (dir) => {
-    const queueFile = await Deno.makeTempFile({ suffix: ".jsonl" });
-    await Deno.remove(queueFile); // ensure empty
+    const queueFile = await makeTempFile(".jsonl");
+    await rm(queueFile); // ensure empty
     const queue = new OfflineQueue(queueFile);
 
     const entries = await queue.drain();
-    assertEquals(entries.length, 0);
+    assert.deepEqual(entries.length, 0);
 
     const count = await git(["rev-list", "--count", "HEAD"], dir);
-    assertEquals(count, "1"); // only init
+    assert.deepEqual(count, "1"); // only init
   });
 });
 
-Deno.test("replay - preserves original timestamps", async () => {
+test("replay - preserves original timestamps", async () => {
   await withTempRepo(async (dir) => {
-    const queueFile = await Deno.makeTempFile({ suffix: ".jsonl" });
+    const queueFile = await makeTempFile(".jsonl");
     const queue = new OfflineQueue(queueFile);
 
     const originalTs = "2025-06-15T03:00:00.000Z";
@@ -127,9 +141,9 @@ Deno.test("replay - preserves original timestamps", async () => {
     }
 
     const authorDate = await git(["log", "-1", "--format=%aI"], dir);
-    assertStringIncludes(authorDate, "2025-06-15");
+    assertIncludes(authorDate, "2025-06-15");
 
     await engine.shutdown();
-    await Deno.remove(queueFile);
+    await rm(queueFile);
   });
 });

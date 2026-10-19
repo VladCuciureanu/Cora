@@ -1,3 +1,4 @@
+import { rm, writeFile } from "node:fs/promises";
 import { loadConfig, pidPath } from "../config/mod.ts";
 import { GitEngine, type CommitEntry, type BaselineData } from "../git/mod.ts";
 import { BeatBuffer } from "../beats/mod.ts";
@@ -14,13 +15,13 @@ function parseArgs(args: string[]): { speed: number; startDate: Date | null; end
       startDate = new Date(args[++i]);
       if (isNaN(startDate.getTime())) {
         console.error(`Invalid --from date: ${args[i]}`);
-        Deno.exit(1);
+        process.exit(1);
       }
     } else if (args[i] === "--to" && args[i + 1]) {
       endDate = new Date(args[++i]);
       if (isNaN(endDate.getTime())) {
         console.error(`Invalid --to date: ${args[i]}`);
-        Deno.exit(1);
+        process.exit(1);
       }
     } else if (args[i] === "--speed" && args[i + 1]) {
       speed = parseFloat(args[++i]);
@@ -31,7 +32,7 @@ function parseArgs(args: string[]): { speed: number; startDate: Date | null; end
 
   if (isNaN(speed) || speed <= 0) {
     console.error("Speed must be a positive number (e.g. 60 = 1 hour/min, 1440 = 1 day/min)");
-    Deno.exit(1);
+    process.exit(1);
   }
 
   return { speed, startDate, endDate };
@@ -127,14 +128,14 @@ export async function mockCommand(): Promise<void> {
   const config = await loadConfig();
   if (!config) {
     console.error("No config found. Run `cora init` first.");
-    Deno.exit(1);
+    process.exit(1);
   }
 
-  let { speed, startDate, endDate } = parseArgs(Deno.args);
+  let { speed, startDate, endDate } = parseArgs(process.argv.slice(2));
   const backfillMode = startDate !== null;
   const backfillEnd = endDate ?? new Date();
 
-  await Deno.writeTextFile(pidPath(), String(Deno.pid));
+  await writeFile(pidPath(), String(process.pid));
 
   const gitEngine = new GitEngine();
   await gitEngine.init();
@@ -159,7 +160,7 @@ export async function mockCommand(): Promise<void> {
   if (backfillMode) {
     if (startDate!.getTime() >= backfillEnd.getTime()) {
       console.log("Nothing to backfill — already up to date.");
-      try { await Deno.remove(pidPath()); } catch { /* ignore */ }
+      try { await rm(pidPath()); } catch { /* ignore */ }
       return;
     }
 
@@ -178,13 +179,13 @@ export async function mockCommand(): Promise<void> {
 
     await gitEngine.fastImport(entries, (done, total) => {
       const pct = Math.round((done / total) * 100);
-      Deno.stdout.writeSync(new TextEncoder().encode(`\r  Importing: ${done}/${total} (${pct}%)`));
+      process.stdout.write(`\r  Importing: ${done}/${total} (${pct}%)`);
     });
 
     console.log("\n✓ Fast-import complete. Pushing...");
 
     await gitEngine.shutdown();
-    try { await Deno.remove(pidPath()); } catch { /* ignore */ }
+    try { await rm(pidPath()); } catch { /* ignore */ }
 
     console.log(`✓ Backfill complete: ${entries.length} commits across ${days} day(s)`);
     return;
@@ -282,11 +283,11 @@ export async function mockCommand(): Promise<void> {
     clearInterval(ticker);
     await buffer.flushWindow();
     await gitEngine.shutdown();
-    try { await Deno.remove(pidPath()); } catch { /* ignore */ }
+    try { await rm(pidPath()); } catch { /* ignore */ }
     console.log("♥ Goodbye.");
-    Deno.exit(0);
+    process.exit(0);
   };
 
-  Deno.addSignalListener("SIGINT", shutdown);
-  Deno.addSignalListener("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }

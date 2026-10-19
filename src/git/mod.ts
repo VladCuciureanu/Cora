@@ -1,5 +1,8 @@
-import { join } from "@std/path";
-import { ensureDir } from "@std/fs";
+import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { repoDir, loadConfig } from "../config/mod.ts";
 
 export interface BaselineData {
@@ -20,27 +23,28 @@ export type CommitEntry =
   | { type: "baseline"; data: BaselineData }
   | { type: "event"; data: EventData };
 
+const execFileAsync = promisify(execFile);
+
 export async function git(args: string[], cwd: string, env?: Record<string, string>): Promise<string> {
-  const cmd = new Deno.Command("git", {
-    args,
-    cwd,
-    stdout: "piped",
-    stderr: "piped",
-    env,
-  });
-  const { code, stdout, stderr } = await cmd.output();
-  if (code !== 0) {
-    const err = new TextDecoder().decode(stderr);
-    throw new Error(`git ${args[0]} failed: ${err}`);
+  try {
+    const { stdout } = await execFileAsync("git", args, {
+      cwd,
+      env: env ? { ...process.env, ...env } : undefined,
+      maxBuffer: Infinity,
+    });
+    return stdout.trim();
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException & { stderr?: string };
+    if (typeof err.code === "string") throw err; // git could not be spawned
+    throw new Error(`git ${args[0]} failed: ${err.stderr ?? ""}`);
   }
-  return new TextDecoder().decode(stdout).trim();
 }
 
 export class GitEngine {
   private dir: string;
   private pendingCommits = 0;
   private pushIntervalMs = 10_000;
-  private pushTimer: number | undefined;
+  private pushTimer: ReturnType<typeof setInterval> | undefined;
   private skipPush: boolean;
 
   constructor(dir?: string, opts?: { skipPush?: boolean }) {
@@ -53,9 +57,9 @@ export class GitEngine {
     if (!config) throw new Error("Config not found. Run `cora init` first.");
 
     try {
-      await Deno.stat(join(this.dir, ".git"));
+      await stat(join(this.dir, ".git"));
     } catch {
-      await ensureDir(this.dir);
+      await mkdir(this.dir, { recursive: true });
       const authUrl = config.repoUrl.replace(
         "https://",
         `https://${config.githubPat}@`,
@@ -67,7 +71,7 @@ export class GitEngine {
   }
 
   async initLocal(): Promise<void> {
-    await ensureDir(join(this.dir, "beats"));
+    await mkdir(join(this.dir, "beats"), { recursive: true });
     if (!this.skipPush) {
       this.pushTimer = setInterval(() => this.flush(), this.pushIntervalMs);
     }
@@ -82,7 +86,7 @@ export class GitEngine {
       beat_count: data.beatCount,
     }, null, 2) + "\n";
 
-    await Deno.writeTextFile(join(this.dir, "beats", filename), content);
+    await writeFile(join(this.dir, "beats", filename), content);
     await git(["add", join("beats", filename)], this.dir);
     await git(
       ["commit", "-m", `♥ ${data.avgBpm}bpm @ ${data.timestamp}`],
@@ -102,7 +106,7 @@ export class GitEngine {
       kind: data.kind,
     }, null, 2) + "\n";
 
-    await Deno.writeTextFile(join(this.dir, "beats", filename), content);
+    await writeFile(join(this.dir, "beats", filename), content);
     await git(["add", join("beats", filename)], this.dir);
     await git(
       ["commit", "-m", `⚡ ${data.bpm}bpm ${data.kind} @ ${data.timestamp}`],
@@ -136,21 +140,28 @@ export class GitEngine {
     try { userEmail = await git(["config", "user.email"], this.dir); } catch { /* */ }
 
     // Spawn fast-import and stream to it
-    const child = new Deno.Command("git", {
-      args: ["fast-import", "--done", "--quiet"],
+    const child = spawn("git", ["fast-import", "--done", "--quiet"], {
       cwd: this.dir,
-      stdin: "piped",
-      stdout: "piped",
-      stderr: "piped",
-    }).spawn();
+      stdio: ["pipe", "ignore", "pipe"],
+    });
+    const stderrChunks: Buffer[] = [];
+    child.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+    const exited = new Promise<number | null>((resolve, reject) => {
+      child.on("error", reject);
+      child.on("close", resolve);
+    });
+    exited.catch(() => { /* surfaced when awaited below */ });
 
     const encoder = new TextEncoder();
-    const writer = child.stdin.getWriter();
+    const stdin = child.stdin;
 
-    const write = async (s: string) => { await writer.write(encoder.encode(s)); };
+    const writeBytes = async (bytes: Uint8Array) => {
+      if (!stdin.write(bytes)) await once(stdin, "drain");
+    };
+    const write = async (s: string) => { await writeBytes(encoder.encode(s)); };
     const writeData = async (data: Uint8Array) => {
       await write(`data ${data.length}\n`);
-      await writer.write(data);
+      await writeBytes(data);
       await write("\n");
     };
 
@@ -223,11 +234,11 @@ export class GitEngine {
     }
 
     await write("done\n");
-    await writer.close();
+    stdin.end();
 
-    const { code, stderr } = await child.output();
+    const code = await exited;
     if (code !== 0) {
-      const err = new TextDecoder().decode(stderr);
+      const err = Buffer.concat(stderrChunks).toString("utf8");
       throw new Error(`git fast-import failed: ${err}`);
     }
 
@@ -243,7 +254,7 @@ export class GitEngine {
       if (!output) return files;
       for (const filePath of output.split("\n")) {
         if (!filePath) continue;
-        const content = await Deno.readFile(join(this.dir, filePath));
+        const content = await readFile(join(this.dir, filePath));
         files.set(filePath, content);
       }
     } catch { /* empty repo */ }
@@ -283,8 +294,8 @@ export class GitEngine {
     let latest: Date | null = null;
 
     try {
-      for await (const entry of Deno.readDir(beatsDir)) {
-        if (!entry.isFile || !entry.name.endsWith(".beat")) continue;
+      for (const entry of await readdir(beatsDir, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.endsWith(".beat")) continue;
         const tsStr = entry.name.replace(".beat", "");
         const date = new Date(tsStr);
         if (!isNaN(date.getTime()) && (latest === null || date > latest)) {

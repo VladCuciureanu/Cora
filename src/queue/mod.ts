@@ -1,5 +1,5 @@
-import { ensureDir } from "@std/fs";
-import { dirname } from "@std/path";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { queuePath } from "../config/mod.ts";
 import type { BaselineData, EventData } from "../git/mod.ts";
 
@@ -15,14 +15,14 @@ export class OfflineQueue {
   }
 
   async enqueue(entry: QueueEntry): Promise<void> {
-    await ensureDir(dirname(this.path));
-    await Deno.writeTextFile(this.path, JSON.stringify(entry) + "\n", { append: true });
+    await mkdir(dirname(this.path), { recursive: true });
+    await appendFile(this.path, JSON.stringify(entry) + "\n");
   }
 
   async drain(): Promise<QueueEntry[]> {
     let text: string;
     try {
-      text = await Deno.readTextFile(this.path);
+      text = await readFile(this.path, "utf8");
     } catch {
       return [];
     }
@@ -38,13 +38,13 @@ export class OfflineQueue {
     }
 
     // Clear the queue file
-    await Deno.writeTextFile(this.path, "");
+    await writeFile(this.path, "");
     return entries;
   }
 
   async size(): Promise<number> {
     try {
-      const text = await Deno.readTextFile(this.path);
+      const text = await readFile(this.path, "utf8");
       return text.split("\n").filter((l) => l.trim()).length;
     } catch {
       return 0;

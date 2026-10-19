@@ -1,8 +1,19 @@
-import { assertEquals } from "jsr:@std/assert";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
 import { OfflineQueue } from "../../src/queue/mod.ts";
 
-Deno.test("OfflineQueue - enqueue and drain", async () => {
-  const tmp = await Deno.makeTempFile({ suffix: ".jsonl" });
+async function makeTempFile(suffix: string): Promise<string> {
+  const file = join(tmpdir(), `cora-${randomUUID()}${suffix}`);
+  await writeFile(file, "");
+  return file;
+}
+
+test("OfflineQueue - enqueue and drain", async () => {
+  const tmp = await makeTempFile(".jsonl");
   const queue = new OfflineQueue(tmp);
 
   await queue.enqueue({
@@ -14,24 +25,24 @@ Deno.test("OfflineQueue - enqueue and drain", async () => {
     data: { timestamp: "2026-01-01T00:01:00Z", bpm: 120, kind: "spike" },
   });
 
-  assertEquals(await queue.size(), 2);
+  assert.deepEqual(await queue.size(), 2);
 
   const entries = await queue.drain();
-  assertEquals(entries.length, 2);
-  assertEquals(entries[0].type, "baseline");
-  assertEquals(entries[1].type, "event");
+  assert.deepEqual(entries.length, 2);
+  assert.deepEqual(entries[0].type, "baseline");
+  assert.deepEqual(entries[1].type, "event");
 
   // After drain, queue should be empty
-  assertEquals(await queue.size(), 0);
+  assert.deepEqual(await queue.size(), 0);
 
-  await Deno.remove(tmp);
+  await rm(tmp);
 });
 
-Deno.test("OfflineQueue - drain empty returns empty", async () => {
-  const tmp = await Deno.makeTempFile({ suffix: ".jsonl" });
-  await Deno.remove(tmp); // ensure file doesn't exist
+test("OfflineQueue - drain empty returns empty", async () => {
+  const tmp = await makeTempFile(".jsonl");
+  await rm(tmp); // ensure file doesn't exist
   const queue = new OfflineQueue(tmp);
 
   const entries = await queue.drain();
-  assertEquals(entries.length, 0);
+  assert.deepEqual(entries.length, 0);
 });
