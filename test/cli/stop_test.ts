@@ -1,54 +1,65 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { stopCommand } from "../../src/cli/stop.ts";
 
-test("stop - reads PID from file correctly", async () => {
-  const tmp = await mkdtemp(join(tmpdir(), "cora-stop-test-"));
-  const pidFile = join(tmp, "cora.pid");
-
-  await writeFile(pidFile, "12345");
-  const text = await readFile(pidFile, "utf8");
-  const pid = parseInt(text.trim(), 10);
-  assert.deepEqual(pid, 12345);
-
-  await rm(tmp, { recursive: true, force: true });
-});
-
-test("stop - missing PID file throws", async () => {
-  const tmp = await mkdtemp(join(tmpdir(), "cora-stop-test-"));
-  const pidFile = join(tmp, "nonexistent.pid");
-
-  await assert.rejects(async () => {
-    await readFile(pidFile, "utf8");
-  });
-
-  await rm(tmp, { recursive: true, force: true });
-});
-
-test("stop - PID file removal works", async () => {
-  const tmp = await mkdtemp(join(tmpdir(), "cora-stop-test-"));
-  const pidFile = join(tmp, "cora.pid");
-
-  await writeFile(pidFile, "99999");
-  await rm(pidFile);
-
-  // Should no longer exist
-  await assert.rejects(async () => {
-    await readFile(pidFile, "utf8");
-  });
-
-  await rm(tmp, { recursive: true, force: true });
-});
-
-test("stop - killing non-existent PID throws", () => {
-  // Use a PID that almost certainly doesn't exist
-  let threw = false;
+async function withTempDir(fn: (dir: string) => Promise<void>) {
+  const dir = await mkdtemp(join(tmpdir(), "cora-stop-test-"));
   try {
-    process.kill(2147483647, "SIGTERM");
-  } catch {
-    threw = true;
+    await fn(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
-  assert.deepEqual(threw, true);
+}
+
+test("stop - terminates the process in the PID file and removes it", async (t) => {
+  await withTempDir(async (dir) => {
+    const pidFile = join(dir, "cora.pid");
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    const exited = once(child, "exit");
+    try {
+      await writeFile(pidFile, String(child.pid));
+      t.mock.method(console, "log", () => {});
+
+      await stopCommand(pidFile);
+
+      await exited;
+      assert.notDeepEqual(child.exitCode, 0);
+      await assert.rejects(stat(pidFile), { code: "ENOENT" });
+    } finally {
+      child.kill();
+    }
+  });
+});
+
+test("stop - stale PID file is removed", async (t) => {
+  await withTempDir(async (dir) => {
+    const pidFile = join(dir, "cora.pid");
+    const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+    await once(child, "exit");
+    await writeFile(pidFile, String(child.pid));
+    const error = t.mock.method(console, "error", () => {});
+
+    await stopCommand(pidFile);
+
+    await assert.rejects(stat(pidFile), { code: "ENOENT" });
+    assert.match(String(error.mock.calls[0].arguments[0]), /Failed to stop Cora/);
+  });
+});
+
+test("stop - missing PID file reports not running and fails", async (t) => {
+  await withTempDir(async (dir) => {
+    const error = t.mock.method(console, "error", () => {});
+    try {
+      await stopCommand(join(dir, "cora.pid"));
+      assert.deepEqual(process.exitCode, 1);
+      assert.match(String(error.mock.calls[0].arguments[0]), /not running/);
+    } finally {
+      process.exitCode = 0;
+    }
+  });
 });

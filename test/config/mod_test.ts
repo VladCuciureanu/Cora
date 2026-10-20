@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { generateApiKey, saveConfig, type CoraConfig } from "../../src/config/mod.ts";
+import { generateApiKey, loadConfig, saveConfig, type CoraConfig } from "../../src/config/mod.ts";
 
 test("generateApiKey - returns 64-char hex string", () => {
   const key = generateApiKey();
@@ -17,52 +17,57 @@ test("generateApiKey - generates unique keys", () => {
   assert.notDeepEqual(key1, key2);
 });
 
-test("config - save and load roundtrip", async () => {
-  const tmpDir = await mkdtemp(join(tmpdir(), "cora-config-test-"));
-  const configPath = join(tmpDir, "config.json");
+async function withTempDir(fn: (dir: string) => Promise<void>) {
+  const dir = await mkdtemp(join(tmpdir(), "cora-config-test-"));
+  try {
+    await fn(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
 
-  const config: CoraConfig = {
-    githubPat: "ghp_testtoken123",
-    repoUrl: "https://github.com/test/repo",
-    apiKey: "abc123",
-    commitIntervalMs: 300_000,
-    eventThresholdPercent: 20,
-    port: 7331,
-  };
+test("saveConfig/loadConfig - roundtrip, creating the directory", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "nested", "config.json");
+    const config: CoraConfig = {
+      githubPat: "ghp_testtoken123",
+      repoUrl: "https://github.com/test/repo",
+      apiKey: "abc123",
+      commitIntervalMs: 60_000,
+      eventThresholdPercent: 15,
+      port: 8080,
+    };
 
-  // Save
-  await mkdir(tmpDir, { recursive: true });
-  await writeFile(configPath, JSON.stringify(config, null, 2) + "\n");
-
-  // Load
-  const text = await readFile(configPath, "utf8");
-  const loaded: CoraConfig = JSON.parse(text);
-
-  assert.deepEqual(loaded.githubPat, config.githubPat);
-  assert.deepEqual(loaded.repoUrl, config.repoUrl);
-  assert.deepEqual(loaded.apiKey, config.apiKey);
-  assert.deepEqual(loaded.commitIntervalMs, config.commitIntervalMs);
-  assert.deepEqual(loaded.eventThresholdPercent, config.eventThresholdPercent);
-  assert.deepEqual(loaded.port, config.port);
-
-  await rm(tmpDir, { recursive: true, force: true });
+    await saveConfig(config, path);
+    assert.deepEqual(await loadConfig(path), config);
+    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), config);
+  });
 });
 
-test("config - load returns all fields", async () => {
-  const tmpDir = await mkdtemp(join(tmpdir(), "cora-config-test-"));
-  const configPath = join(tmpDir, "config.json");
+test("loadConfig - fills in defaults for missing optional fields", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json");
+    await writeFile(path, JSON.stringify({ githubPat: "ghp_x", repoUrl: "https://x", apiKey: "key", port: 9000 }));
 
-  const partial = { githubPat: "ghp_x", repoUrl: "https://x", apiKey: "key" };
-  await writeFile(configPath, JSON.stringify(partial));
+    assert.deepEqual(await loadConfig(path), {
+      githubPat: "ghp_x",
+      repoUrl: "https://x",
+      apiKey: "key",
+      commitIntervalMs: 5 * 60 * 1000,
+      eventThresholdPercent: 20,
+      port: 9000,
+    });
+  });
+});
 
-  const text = await readFile(configPath, "utf8");
-  const loaded = JSON.parse(text);
+test("loadConfig - returns null for a missing or malformed file", async () => {
+  await withTempDir(async (dir) => {
+    assert.deepEqual(await loadConfig(join(dir, "missing.json")), null);
 
-  assert.deepEqual(loaded.githubPat, "ghp_x");
-  assert.deepEqual(loaded.repoUrl, "https://x");
-  assert.deepEqual(loaded.apiKey, "key");
-
-  await rm(tmpDir, { recursive: true, force: true });
+    const path = join(dir, "config.json");
+    await writeFile(path, "{ not json");
+    assert.deepEqual(await loadConfig(path), null);
+  });
 });
 
 test("saveConfig - config file is readable by the owner only", {

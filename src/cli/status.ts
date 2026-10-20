@@ -1,8 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { loadConfig, pidPath } from "../config/mod.ts";
 
-export async function statusCommand(): Promise<void> {
-  const config = await loadConfig();
+export async function statusCommand(
+  { configPath, pidFile = pidPath() }: { configPath?: string; pidFile?: string } = {},
+): Promise<void> {
+  const config = await loadConfig(configPath);
   if (!config) {
     console.error("No config found. Run `cora init` first.");
     process.exit(1);
@@ -12,7 +14,7 @@ export async function statusCommand(): Promise<void> {
   let running = false;
   let pid: number | null = null;
   try {
-    const text = await readFile(pidPath(), "utf8");
+    const text = await readFile(pidFile, "utf8");
     pid = parseInt(text.trim(), 10);
     process.kill(pid, 0); // check if process exists
     running = true;

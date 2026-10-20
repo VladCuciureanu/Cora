@@ -1,9 +1,32 @@
 import { rm, writeFile } from "node:fs/promises";
 import { loadConfig, pidPath } from "../config/mod.ts";
 import { GitEngine } from "../git/mod.ts";
-import { BeatBuffer } from "../beats/mod.ts";
+import { BeatBuffer, type BeatListener } from "../beats/mod.ts";
 import { IngestionServer } from "../server/mod.ts";
 import { OfflineQueue } from "../queue/mod.ts";
+import { replayQueue } from "./replay.ts";
+
+/** Commit baselines and events as they arrive; anything that fails to commit is queued for replay. */
+export function commitListener(gitEngine: GitEngine, queue: OfflineQueue): BeatListener {
+  return {
+    onBaseline: async (data) => {
+      try {
+        await gitEngine.commitBaseline(data);
+      } catch (e) {
+        console.error(`Baseline commit failed, queuing: ${e}`);
+        await queue.enqueue({ type: "baseline", data });
+      }
+    },
+    onEvent: async (data) => {
+      try {
+        await gitEngine.commitEvent(data);
+      } catch (e) {
+        console.error(`Event commit failed, queuing: ${e}`);
+        await queue.enqueue({ type: "event", data });
+      }
+    },
+  };
+}
 
 export async function startCommand(): Promise<void> {
   const config = await loadConfig();
@@ -22,37 +45,14 @@ export async function startCommand(): Promise<void> {
   const queuedCount = await queue.size();
   if (queuedCount > 0) {
     console.log(`♥ Replaying ${queuedCount} queued beat(s)...`);
-    const { failed } = await queue.process(async (entry) => {
-      if (entry.type === "baseline") {
-        await gitEngine.commitBaseline(entry.data);
-      } else {
-        await gitEngine.commitEvent(entry.data);
-      }
-    });
+    const { failed } = await replayQueue(queue, gitEngine);
     for (const { error } of failed) {
       console.error(`Replay failed, kept in queue: ${error}`);
     }
   }
 
   const buffer = new BeatBuffer(config.eventThresholdPercent);
-  buffer.setListener({
-    onBaseline: async (data) => {
-      try {
-        await gitEngine.commitBaseline(data);
-      } catch (e) {
-        console.error(`Baseline commit failed, queuing: ${e}`);
-        await queue.enqueue({ type: "baseline", data });
-      }
-    },
-    onEvent: async (data) => {
-      try {
-        await gitEngine.commitEvent(data);
-      } catch (e) {
-        console.error(`Event commit failed, queuing: ${e}`);
-        await queue.enqueue({ type: "event", data });
-      }
-    },
-  });
+  buffer.setListener(commitListener(gitEngine, queue));
 
   // Periodic baseline flush
   const baselineTimer = setInterval(() => buffer.flushWindow(), config.commitIntervalMs);

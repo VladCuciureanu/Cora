@@ -2,6 +2,19 @@ import { loadConfig } from "../config/mod.ts";
 import { GitEngine } from "../git/mod.ts";
 import { OfflineQueue } from "../queue/mod.ts";
 
+/**
+ * Commit every queued entry in order. Entries that fail to commit stay in the
+ * queue for the next replay.
+ */
+export function replayQueue(
+  queue: OfflineQueue,
+  gitEngine: GitEngine,
+): ReturnType<OfflineQueue["process"]> {
+  return queue.process((entry) =>
+    entry.type === "baseline" ? gitEngine.commitBaseline(entry.data) : gitEngine.commitEvent(entry.data)
+  );
+}
+
 export async function replayCommand(): Promise<void> {
   const config = await loadConfig();
   if (!config) {
@@ -22,13 +35,7 @@ export async function replayCommand(): Promise<void> {
   const gitEngine = new GitEngine();
   await gitEngine.init();
 
-  const { processed, failed } = await queue.process(async (entry) => {
-    if (entry.type === "baseline") {
-      await gitEngine.commitBaseline(entry.data);
-    } else {
-      await gitEngine.commitEvent(entry.data);
-    }
-  });
+  const { processed, failed } = await replayQueue(queue, gitEngine);
   for (const { error } of failed) {
     console.error(`Failed to replay entry: ${error}`);
   }
