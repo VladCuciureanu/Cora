@@ -96,5 +96,8 @@ The token is sent as an HTTP header per git command and is never written to `.gi
 npm run dev         # node --watch src/main.ts
 npm test            # node:test, test/**/*.test.ts
 npm run typecheck   # tsc
+npm run lint        # biome lint
+npm run format      # biome check --write
+npm run check       # biome check, typecheck and tests
 npm run build       # tsc -p tsconfig.build.json -> dist/
 ```
