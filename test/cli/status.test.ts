@@ -14,6 +14,7 @@ import { saveConfig } from "../../src/config/mod.ts";
 async function deadPid(): Promise<number> {
   const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
   await once(child, "exit");
+  // biome-ignore lint/style/noNonNullAssertion: spawning node itself always yields a pid
   return child.pid!;
 }
 

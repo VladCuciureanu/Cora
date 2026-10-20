@@ -5,7 +5,7 @@ import type { BaselineData, EventData } from "../../src/git/mod.ts";
 
 test("BeatBuffer - flushWindow computes correct baseline", async () => {
   const buffer = new BeatBuffer(20);
-  let baseline: BaselineData | null = null;
+  let baseline = null as BaselineData | null;
   buffer.setListener({
     onBaseline: (data) => {
       baseline = data;
@@ -29,10 +29,10 @@ test("BeatBuffer - flushWindow computes correct baseline", async () => {
   assert.deepEqual(buffer.sampleCount, 3);
   await buffer.flushWindow();
 
-  assert.deepEqual(baseline!.avgBpm, 80);
-  assert.deepEqual(baseline!.minBpm, 60);
-  assert.deepEqual(baseline!.maxBpm, 100);
-  assert.deepEqual(baseline!.beatCount, 3);
+  assert.deepEqual(baseline?.avgBpm, 80);
+  assert.deepEqual(baseline?.minBpm, 60);
+  assert.deepEqual(baseline?.maxBpm, 100);
+  assert.deepEqual(baseline?.beatCount, 3);
   assert.deepEqual(buffer.sampleCount, 0);
 });
 
@@ -136,7 +136,7 @@ test("BeatBuffer - detects reconnect after gap", async () => {
 
 test("BeatBuffer - baseline is stamped with the last sample's time, not wall-clock time", async () => {
   const buffer = new BeatBuffer(20);
-  let baseline: BaselineData | null = null;
+  let baseline = null as BaselineData | null;
   buffer.setListener({
     onBaseline: (data) => {
       baseline = data;
@@ -149,7 +149,7 @@ test("BeatBuffer - baseline is stamped with the last sample's time, not wall-clo
   await buffer.addSample({ timestamp: "2020-05-01T08:00:05.000Z", bpm: 72, rrIntervals: [] });
   await buffer.flushWindow();
 
-  assert.deepEqual(baseline!.timestamp, "2020-05-01T08:00:05.000Z");
+  assert.deepEqual(baseline?.timestamp, "2020-05-01T08:00:05.000Z");
 });
 
 test("detectDeviation - needs 5 readings and reports spikes/drops at the threshold", () => {

@@ -58,7 +58,7 @@ export function parseBeatFilename(name: string): Date | null {
     ts = `${dateHour}:${minute}${second ? `:${second}` : ""}${zone.replace(/^([+-]\d{2})-(\d{2})$/, "$1:$2")}`;
   }
   const date = new Date(ts);
-  return isNaN(date.getTime()) ? null : date;
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 export async function git(
@@ -213,17 +213,16 @@ export class GitEngine {
 
   private async commitBaselineUnlocked(data: BaselineData): Promise<void> {
     const filename = beatFilename(data.timestamp);
-    const content =
-      JSON.stringify(
-        {
-          avg_bpm: data.avgBpm,
-          min_bpm: data.minBpm,
-          max_bpm: data.maxBpm,
-          beat_count: data.beatCount,
-        },
-        null,
-        2,
-      ) + "\n";
+    const content = `${JSON.stringify(
+      {
+        avg_bpm: data.avgBpm,
+        min_bpm: data.minBpm,
+        max_bpm: data.maxBpm,
+        beat_count: data.beatCount,
+      },
+      null,
+      2,
+    )}\n`;
 
     await writeFile(join(this.dir, "beats", filename), content);
     await this.git(["add", join("beats", filename)], this.dir);
@@ -240,15 +239,14 @@ export class GitEngine {
 
   private async commitEventUnlocked(data: EventData): Promise<void> {
     const filename = beatFilename(data.timestamp, data.kind);
-    const content =
-      JSON.stringify(
-        {
-          bpm: data.bpm,
-          kind: data.kind,
-        },
-        null,
-        2,
-      ) + "\n";
+    const content = `${JSON.stringify(
+      {
+        bpm: data.bpm,
+        kind: data.kind,
+      },
+      null,
+      2,
+    )}\n`;
 
     await writeFile(join(this.dir, "beats", filename), content);
     await this.git(["add", join("beats", filename)], this.dir);
@@ -363,21 +361,20 @@ export class GitEngine {
       let commitMsg: string;
       if (isBaseline) {
         const bd = data as BaselineData;
-        fileContent =
-          JSON.stringify(
-            {
-              avg_bpm: bd.avgBpm,
-              min_bpm: bd.minBpm,
-              max_bpm: bd.maxBpm,
-              beat_count: bd.beatCount,
-            },
-            null,
-            2,
-          ) + "\n";
+        fileContent = `${JSON.stringify(
+          {
+            avg_bpm: bd.avgBpm,
+            min_bpm: bd.minBpm,
+            max_bpm: bd.maxBpm,
+            beat_count: bd.beatCount,
+          },
+          null,
+          2,
+        )}\n`;
         commitMsg = `♥ ${bd.avgBpm}bpm @ ${ts}`;
       } else {
         const ed = data as EventData;
-        fileContent = JSON.stringify({ bpm: ed.bpm, kind: ed.kind }, null, 2) + "\n";
+        fileContent = `${JSON.stringify({ bpm: ed.bpm, kind: ed.kind }, null, 2)}\n`;
         commitMsg = `⚡ ${ed.bpm}bpm ${ed.kind} @ ${ts}`;
       }
 

@@ -95,7 +95,6 @@ test("MockHeart - activities don't overlap", () => {
 
 test("MockHeart - replanDay generates new activities", () => {
   const heart = new MockHeart({ restingHr: 68 });
-  const plan1 = heart.getActivityPlan();
   heart.replanDay();
   const plan2 = heart.getActivityPlan();
 

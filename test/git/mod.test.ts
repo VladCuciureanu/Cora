@@ -184,7 +184,7 @@ test("GitEngine - getLatestBeatTimestamp returns latest", async () => {
     });
 
     const latest = await engine.getLatestBeatTimestamp();
-    assert.deepEqual(latest!.toISOString(), "2026-03-15T14:30:00.000Z");
+    assert.deepEqual(latest?.toISOString(), "2026-03-15T14:30:00.000Z");
 
     await engine.shutdown();
   });
@@ -212,14 +212,14 @@ test("beatFilename - contains no ':' and round-trips", () => {
       const name = beatFilename(ts, kind);
       assert.ok(!name.includes(":"), `${name} should not contain ':'`);
       assert.ok(name.endsWith(kind ? `.${kind}.beat` : ".beat"));
-      assert.deepEqual(parseBeatFilename(name)!.toISOString(), new Date(ts).toISOString());
+      assert.deepEqual(parseBeatFilename(name)?.toISOString(), new Date(ts).toISOString());
     }
   }
 });
 
 test("parseBeatFilename - still reads legacy names with ':'", () => {
   assert.deepEqual(
-    parseBeatFilename("2026-03-24T12:00:00.000Z.beat")!.toISOString(),
+    parseBeatFilename("2026-03-24T12:00:00.000Z.beat")?.toISOString(),
     "2026-03-24T12:00:00.000Z",
   );
   assert.deepEqual(parseBeatFilename("notes.txt"), null);
@@ -359,9 +359,11 @@ test("GitEngine - clone/push send the PAT as a header, never in the URL", async 
     await engine.commitEvent({ timestamp: "2026-03-24T12:00:00.000Z", bpm: 120, kind: "spike" });
     await engine.flush();
 
-    const clone = calls.find((c) => c.args[0] === "clone")!;
+    const clone = calls.find((c) => c.args[0] === "clone");
+    assert.ok(clone);
     assert.deepEqual(clone.args, ["clone", AUTH_CONFIG.repoUrl, "."]);
-    const push = calls.find((c) => c.args[0] === "push")!;
+    const push = calls.find((c) => c.args[0] === "push");
+    assert.ok(push);
     for (const call of [clone, push]) {
       assert.deepEqual(call.env, authEnv(AUTH_CONFIG.repoUrl, AUTH_CONFIG.githubPat));
     }
@@ -488,7 +490,7 @@ test("GitEngine - fastImport appends commits on top of existing history", async 
     );
     assert.deepEqual(await git(["status", "--porcelain"], dir), "");
     assert.deepEqual(
-      (await engine.getLatestBeatTimestamp())!.toISOString(),
+      (await engine.getLatestBeatTimestamp())?.toISOString(),
       "2025-01-01T00:10:00.000Z",
     );
     assert.deepEqual(progress, [[3, 3]]);
@@ -523,7 +525,7 @@ async function assertBothBeatFilesKept(dir: string) {
   assert.deepEqual(files.length, 2, `expected 2 beat files, got ${files.join(", ")}`);
   for (const file of files) {
     assert.ok(!file.includes(":"), `${file} should not contain ':'`);
-    assert.deepEqual(parseBeatFilename(file.slice("beats/".length))!.toISOString(), SAME_TS);
+    assert.deepEqual(parseBeatFilename(file.slice("beats/".length))?.toISOString(), SAME_TS);
   }
   const contents = await Promise.all(
     files.map(async (f) => JSON.parse(await readFile(join(dir, f), "utf8"))),

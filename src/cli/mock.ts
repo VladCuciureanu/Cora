@@ -17,13 +17,13 @@ function parseArgs(args: string[]): {
   for (let i = 1; i < args.length; i++) {
     if (args[i] === "--from" && args[i + 1]) {
       startDate = new Date(args[++i]);
-      if (isNaN(startDate.getTime())) {
+      if (Number.isNaN(startDate.getTime())) {
         console.error(`Invalid --from date: ${args[i]}`);
         process.exit(1);
       }
     } else if (args[i] === "--to" && args[i + 1]) {
       endDate = new Date(args[++i]);
-      if (isNaN(endDate.getTime())) {
+      if (Number.isNaN(endDate.getTime())) {
         console.error(`Invalid --to date: ${args[i]}`);
         process.exit(1);
       }
@@ -34,7 +34,7 @@ function parseArgs(args: string[]): {
     }
   }
 
-  if (isNaN(speed) || speed <= 0) {
+  if (Number.isNaN(speed) || speed <= 0) {
     console.error("Speed must be a positive number (e.g. 60 = 1 hour/min, 1440 = 1 day/min)");
     process.exit(1);
   }
@@ -130,20 +130,20 @@ export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
   const heart = new MockHeart();
 
   // --- Backfill mode: generate entries in memory, then fast-import ---
-  if (backfillMode) {
-    if (startDate!.getTime() >= backfillEnd.getTime()) {
+  if (backfillMode && startDate) {
+    if (startDate.getTime() >= backfillEnd.getTime()) {
       console.log("Nothing to backfill — already up to date.");
       return;
     }
 
     await writeFile(pidPath(), String(process.pid));
     try {
-      const days = Math.ceil((backfillEnd.getTime() - startDate!.getTime()) / 86_400_000);
+      const days = Math.ceil((backfillEnd.getTime() - startDate.getTime()) / 86_400_000);
       console.log(`♥ Generating ${days} days of heartbeat data...`);
 
       const entries = generateEntries(
         heart,
-        startDate!.getTime(),
+        startDate.getTime(),
         backfillEnd.getTime(),
         config.commitIntervalMs,
         config.eventThresholdPercent,

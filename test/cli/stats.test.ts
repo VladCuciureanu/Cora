@@ -88,9 +88,9 @@ test("getStats - computes stats from real git repo", async () => {
     }
 
     const stats = await getStats(dir, today);
-    assert.deepEqual(stats!.totalCommits, 3);
-    assert.deepEqual(stats!.avgBpm, 80); // (70+80+90)/3
-    assert.deepEqual(stats!.streakDays, 1);
+    assert.deepEqual(stats?.totalCommits, 3);
+    assert.deepEqual(stats?.avgBpm, 80); // (70+80+90)/3
+    assert.deepEqual(stats?.streakDays, 1);
   });
 });
 
@@ -103,7 +103,7 @@ test("getStats - returns null for empty repo", async () => {
 
     const stats = await getStats(dir);
     // Has commits but no bpm data
-    assert.deepEqual(stats!.totalCommits, 1);
-    assert.deepEqual(stats!.avgBpm, null);
+    assert.deepEqual(stats?.totalCommits, 1);
+    assert.deepEqual(stats?.avgBpm, null);
   });
 });

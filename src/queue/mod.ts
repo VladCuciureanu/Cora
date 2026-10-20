@@ -12,7 +12,7 @@ export class OfflineQueue {
 
   async enqueue(entry: CommitEntry): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true });
-    await appendFile(this.path, JSON.stringify(entry) + "\n");
+    await appendFile(this.path, `${JSON.stringify(entry)}\n`);
   }
 
   async drain(): Promise<CommitEntry[]> {
@@ -68,7 +68,7 @@ export class OfflineQueue {
     } catch {
       // queue file missing — nothing enqueued meanwhile
     }
-    const head = entries.map((e) => JSON.stringify(e) + "\n").join("");
+    const head = entries.map((e) => `${JSON.stringify(e)}\n`).join("");
     await mkdir(dirname(this.path), { recursive: true });
     await writeFile(this.path, head + rest);
   }
