@@ -4,6 +4,7 @@ import { type CoraConfig, pidPath, requireConfig } from "../config.ts";
 import { type CommitEntry, GitEngine } from "../git.ts";
 import { MockHeart } from "../mock/heart.ts";
 import { OfflineQueue } from "../queue.ts";
+import { onShutdownSignal } from "./signals.ts";
 import { commitListener } from "./start.ts";
 
 /** Fastest live simulation speed. */
@@ -220,8 +221,8 @@ export function startTicker(
   let lastDay = new Date(simTime).getDate();
   let lastFlush = simTime;
   let stopped = false;
-  // Ticks run one after another so stop() can wait for the last one
-  let pending: Promise<void> = Promise.resolve();
+  // At most one tick runs at a time, so stop() can wait for it
+  let inFlight: Promise<void> | undefined;
 
   const tick = async () => {
     if (stopped) return;
@@ -250,15 +251,22 @@ export function startTicker(
     }
   };
 
+  // A tick that comes due while the last one is still running is skipped,
+  // not queued, so slow commits can't build an ever-growing backlog
   const timer = setInterval(() => {
-    pending = pending.then(tick, tick);
+    if (inFlight) return;
+    inFlight = tick()
+      .catch(() => {})
+      .finally(() => {
+        inFlight = undefined;
+      });
   }, simStepMs / speed);
 
   return {
     async stop() {
       stopped = true;
       clearInterval(timer);
-      await pending.catch(() => {});
+      await inFlight;
     },
   };
 }
@@ -289,10 +297,7 @@ async function runLive(
 
   const ticker = startTicker(heart, buffer, speed, config.commitIntervalMs);
 
-  let stopping = false;
-  const shutdown = async () => {
-    if (stopping) return;
-    stopping = true;
+  onShutdownSignal(async () => {
     console.log("\n♥ Stopping mock heart...");
     // Wait for an in-flight tick so nothing is committed after the final flush
     await ticker.stop();
@@ -300,10 +305,7 @@ async function runLive(
     await gitEngine.shutdown();
     await removePidFile();
     console.log("♥ Goodbye.");
-  };
-
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  });
 }
 
 export async function mockCommand(options: MockOptions = {}): Promise<void> {

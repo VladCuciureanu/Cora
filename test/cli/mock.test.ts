@@ -55,3 +55,49 @@ test("startTicker - nothing reaches the buffer once stop() resolves", async () =
   await new Promise((resolve) => setTimeout(resolve, 60));
   assert.equal(calls.length, seen);
 });
+
+test("startTicker - skips ticks that come due while one is still running", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const flushMicrotasks = () => new Promise((resolve) => setImmediate(resolve));
+  let samples = 0;
+  let release = () => {};
+  const buffer = {
+    addSample() {
+      samples++;
+      return new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    },
+    async flushWindow() {},
+  };
+  // speed 1000: a tick due every 5 ms
+  const ticker = startTicker(new MockHeart({ seed: 1 }), buffer, 1000, 60_000);
+  t.mock.timers.tick(5);
+  await flushMicrotasks();
+  assert.equal(samples, 1);
+
+  // ten more ticks come due while the first is stuck; none are queued
+  for (let i = 0; i < 10; i++) t.mock.timers.tick(5);
+  await flushMicrotasks();
+  release();
+  await flushMicrotasks();
+  assert.equal(samples, 1);
+
+  // the next tick after the slow one finishes runs as normal
+  t.mock.timers.tick(5);
+  await flushMicrotasks();
+  assert.equal(samples, 2);
+
+  // stop() still waits for the tick in flight
+  let stopped = false;
+  const stopping = ticker.stop().then(() => {
+    stopped = true;
+  });
+  await flushMicrotasks();
+  assert.equal(stopped, false);
+  release();
+  await stopping;
+  t.mock.timers.tick(50);
+  await flushMicrotasks();
+  assert.equal(samples, 2);
+});

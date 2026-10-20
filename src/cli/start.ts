@@ -5,6 +5,7 @@ import { type CommitEntry, GitEngine } from "../git.ts";
 import { OfflineQueue } from "../queue.ts";
 import { IngestionServer } from "../server.ts";
 import { replayQueue } from "./replay.ts";
+import { onShutdownSignal } from "./signals.ts";
 
 /**
  * Commit baselines and events as they arrive; anything that fails to commit is
@@ -95,6 +96,5 @@ export async function startCommand(): Promise<void> {
     console.log("♥ Goodbye.");
   };
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  onShutdownSignal(shutdown);
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -170,5 +171,74 @@ test("cli - a backfill that fails after the repo is cloned exits 1 promptly", as
     assert.equal(code, 1, stderr);
     assert.match(stderr, /^cora: git fast-import failed: .*\n$/);
     assert.ok(Date.now() - started < 10_000, "took too long to exit");
+  });
+});
+
+/** A `git` for PATH that hangs on `commit` and passes everything else to the real git. */
+async function gitHangingOnCommit(home: string): Promise<string> {
+  const realGit = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+  const bin = join(home, "bin");
+  await mkdir(bin);
+  await writeFile(
+    join(bin, "git"),
+    `#!/bin/sh\nif [ "$1" = commit ]; then exec sleep 30; fi\nexec "${realGit}" "$@"\n`,
+    { mode: 0o755 },
+  );
+  return bin;
+}
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("cli - a later second signal forces mock to exit while its shutdown hangs", {
+  skip: process.platform === "win32" && "POSIX signals can't be delivered on Windows",
+}, async () => {
+  await withHome(async (home) => {
+    const remote = join(home, "remote.git");
+    await git(["init", "--bare", remote], home);
+    // a commit interval of one sample: the first tick commits, and hangs
+    const config = configFor(home, { repoUrl: remote, commitIntervalMs: 5000 });
+    await saveConfig(config, configPathIn(home));
+    const bin = await gitHangingOnCommit(home);
+
+    const child = spawn(process.execPath, [MAIN, "mock", "100"], {
+      env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` },
+    });
+    const exited = once(child, "exit");
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const output = () => `stdout: ${stdout}\nstderr: ${stderr}`;
+    const waitFor = async (pattern: RegExp) => {
+      while (!pattern.test(stdout)) {
+        if (child.exitCode !== null || child.signalCode !== null) {
+          assert.fail(`exited before ${pattern}\n${output()}`);
+        }
+        await delay(20);
+      }
+    };
+    const timer = setTimeout(() => child.kill("SIGKILL"), 15_000);
+    try {
+      await waitFor(/Mock heart started/);
+      // let the first tick (due after 50 ms) get stuck in its commit
+      await delay(500);
+      child.kill("SIGINT");
+      await waitFor(/Stopping mock heart/);
+      // past the window in which a repeat of the first signal is ignored
+      await delay(1500);
+      const signalled = Date.now();
+      child.kill("SIGTERM");
+      const [code] = await exited;
+      assert.equal(code, 143, output());
+      assert.ok(Date.now() - signalled < 3000, "took too long to exit");
+      assert.match(stderr, /^cora: forced exit\n$/m);
+    } finally {
+      clearTimeout(timer);
+      child.kill("SIGKILL");
+    }
   });
 });
