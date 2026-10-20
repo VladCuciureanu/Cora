@@ -3,7 +3,13 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { type CoraConfig, generateApiKey, loadConfig, saveConfig } from "../src/config.ts";
+import {
+  type CoraConfig,
+  generateApiKey,
+  loadConfig,
+  resolveConfigDir,
+  saveConfig,
+} from "../src/config.ts";
 
 test("generateApiKey - returns 64-char hex string", () => {
   const key = generateApiKey();
@@ -123,4 +129,39 @@ test("saveConfig - config file is readable by the owner only", {
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
+});
+
+test("resolveConfigDir - uses the os home dir when HOME agrees or nothing is there", () => {
+  const exists = () => false;
+  assert.equal(
+    resolveConfigDir({ homedir: "/u", env: { HOME: "/u" }, exists }),
+    join("/u", ".config", "cora"),
+  );
+  assert.equal(
+    resolveConfigDir({ homedir: "/u", env: { HOME: "/h" }, exists }),
+    join("/u", ".config", "cora"),
+  );
+});
+
+test("resolveConfigDir - keeps a pre-0.2 config under a different HOME", () => {
+  const legacy = join("/h", ".config", "cora");
+  const current = join("/u", ".config", "cora");
+  const notes: string[] = [];
+  const dir = resolveConfigDir({
+    homedir: "/u",
+    env: { HOME: "/h", USERPROFILE: "/u" },
+    exists: (p) => p === join(legacy, "config.json"),
+    note: (m) => notes.push(m),
+  });
+  assert.equal(dir, legacy);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0] as string, /\.config.cora/);
+
+  // a config at the new location wins
+  const both = resolveConfigDir({
+    homedir: "/u",
+    env: { HOME: "/h" },
+    exists: (p) => p === join(legacy, "config.json") || p === join(current, "config.json"),
+  });
+  assert.equal(both, current);
 });
