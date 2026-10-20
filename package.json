@@ -17,7 +17,7 @@
     "dev": "node --watch src/main.ts",
     "start": "node src/main.ts",
     "build": "tsc -p tsconfig.build.json",
-    "test": "node --test \"test/**/*_test.ts\"",
+    "test": "node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc"
   },
   "dependencies": {
