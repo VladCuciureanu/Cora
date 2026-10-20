@@ -1,9 +1,10 @@
 import { rm, writeFile } from "node:fs/promises";
 import { BeatBuffer, detectDeviation, pushRolling, summarizeWindow } from "../beats.ts";
-import { pidPath, requireConfig } from "../config.ts";
+import { type CoraConfig, pidPath, requireConfig } from "../config.ts";
 import { type CommitEntry, GitEngine } from "../git.ts";
 import { MockHeart } from "../mock/heart.ts";
 import { OfflineQueue } from "../queue.ts";
+import { commitListener } from "./start.ts";
 
 /** Fastest live simulation speed. */
 const MAX_LIVE_SPEED = 100;
@@ -98,132 +99,99 @@ export function generateEntries(
   return entries;
 }
 
-export async function mockCommand(options: MockOptions = {}): Promise<void> {
-  let { speed, startDate, endDate } = parseOptions(options);
-  const config = await requireConfig();
-
-  const backfillMode = startDate !== null;
-  const backfillEnd = endDate ?? new Date();
-
-  const gitEngine = new GitEngine();
-  await gitEngine.init(config);
-  console.log("✓ Git repo ready");
-
-  // Resume from latest beat if available
-  const latestBeat = await gitEngine.getLatestBeatTimestamp();
-  if (latestBeat) {
-    const resumeFrom = new Date(latestBeat.getTime() + 1);
-    if (backfillMode && startDate && resumeFrom > startDate) {
-      startDate = resumeFrom;
-      console.log(`♥ Resuming from last beat: ${latestBeat.toISOString()}`);
-    } else if (!backfillMode) {
-      console.log(`♥ Last beat: ${latestBeat.toISOString()}`);
-    }
+/** Remove the PID file, ignoring a missing one. */
+async function removePidFile(): Promise<void> {
+  try {
+    await rm(pidPath());
+  } catch {
+    /* ignore */
   }
+}
 
-  const queue = new OfflineQueue();
-  const heart = new MockHeart();
-
-  // --- Backfill mode: generate entries in memory, then fast-import ---
-  if (backfillMode && startDate) {
-    if (startDate.getTime() >= backfillEnd.getTime()) {
-      console.log("Nothing to backfill — already up to date.");
-      return;
-    }
-
-    await writeFile(pidPath(), String(process.pid));
-    try {
-      const days = Math.ceil((backfillEnd.getTime() - startDate.getTime()) / 86_400_000);
-      console.log(`♥ Generating ${days} days of heartbeat data...`);
-
-      const entries = generateEntries(
-        heart,
-        startDate.getTime(),
-        backfillEnd.getTime(),
-        config.commitIntervalMs,
-        config.eventThresholdPercent,
-      );
-
-      console.log(`✓ Generated ${entries.length} commits. Fast-importing into git...`);
-
-      await gitEngine.fastImport(entries, (done, total) => {
-        const pct = Math.round((done / total) * 100);
-        process.stdout.write(`\r  Importing: ${done}/${total} (${pct}%)`);
-      });
-
-      console.log("\n✓ Fast-import complete. Pushing...");
-
-      await gitEngine.shutdown();
-
-      console.log(`✓ Backfill complete: ${entries.length} commits across ${days} day(s)`);
-    } finally {
-      try {
-        await rm(pidPath());
-      } catch {
-        /* ignore */
-      }
-    }
+/** Generate the beats from `start` to `end` and fast-import them in one go. */
+async function backfill(
+  gitEngine: GitEngine,
+  heart: MockHeart,
+  config: CoraConfig,
+  start: Date,
+  end: Date,
+): Promise<void> {
+  if (start.getTime() >= end.getTime()) {
+    console.log("Nothing to backfill — already up to date.");
     return;
   }
 
-  // --- Live mode ---
-  const buffer = new BeatBuffer(config.eventThresholdPercent);
+  await writeFile(pidPath(), String(process.pid));
+  try {
+    const days = Math.ceil((end.getTime() - start.getTime()) / 86_400_000);
+    console.log(`♥ Generating ${days} days of heartbeat data...`);
 
-  buffer.setListener({
-    onBaseline: async (data) => {
-      try {
-        await gitEngine.commitBaseline(data);
-        console.log(
-          `  ♥ baseline ${data.avgBpm}bpm (${data.minBpm}–${data.maxBpm}) x${data.beatCount}`,
-        );
-      } catch (e) {
-        console.error(`Baseline commit failed, queuing: ${e}`);
-        await queue.enqueue({ type: "baseline", data });
-      }
-    },
-    onEvent: async (data) => {
-      try {
-        await gitEngine.commitEvent(data);
-        console.log(`  ⚡ ${data.kind} ${data.bpm}bpm`);
-      } catch (e) {
-        console.error(`Event commit failed, queuing: ${e}`);
-        await queue.enqueue({ type: "event", data });
-      }
-    },
-  });
-
-  // Fill gap if needed
-  if (latestBeat && latestBeat.getTime() < Date.now() - config.commitIntervalMs) {
-    const gapStart = new Date(latestBeat.getTime() + 1);
-    const gapEnd = new Date();
-    console.log(`♥ Filling gap: ${gapStart.toISOString()} → ${gapEnd.toISOString()}`);
-
-    const gapEntries = generateEntries(
+    const entries = generateEntries(
       heart,
-      gapStart.getTime(),
-      gapEnd.getTime(),
+      start.getTime(),
+      end.getTime(),
       config.commitIntervalMs,
       config.eventThresholdPercent,
     );
 
-    if (gapEntries.length > 0) {
-      await gitEngine.fastImport(gapEntries);
-      console.log(`✓ Gap filled: ${gapEntries.length} commits\n`);
-    }
-  }
+    console.log(`✓ Generated ${entries.length} commits. Fast-importing into git...`);
 
-  // Only advertise the PID once setup has succeeded
-  await writeFile(pidPath(), String(process.pid));
+    await gitEngine.fastImport(entries, (done, total) => {
+      const pct = Math.round((done / total) * 100);
+      process.stdout.write(`\r  Importing: ${done}/${total} (${pct}%)`);
+    });
 
-  // One 5 s sample every 50 ms of real time at most
-  if (speed > MAX_LIVE_SPEED) {
-    console.log(`  Speed ${speed}x is above the live maximum; using ${MAX_LIVE_SPEED}x`);
-    speed = MAX_LIVE_SPEED;
+    console.log("\n✓ Fast-import complete. Pushing...");
+
+    await gitEngine.shutdown();
+
+    console.log(`✓ Backfill complete: ${entries.length} commits across ${days} day(s)`);
+  } finally {
+    await removePidFile();
   }
+}
+
+/** Fast-import beats for the time since `latestBeat` if more than a commit interval has passed. */
+async function fillGap(
+  gitEngine: GitEngine,
+  heart: MockHeart,
+  config: CoraConfig,
+  latestBeat: Date | null,
+): Promise<void> {
+  if (!latestBeat || latestBeat.getTime() >= Date.now() - config.commitIntervalMs) return;
+
+  const gapStart = new Date(latestBeat.getTime() + 1);
+  const gapEnd = new Date();
+  console.log(`♥ Filling gap: ${gapStart.toISOString()} → ${gapEnd.toISOString()}`);
+
+  const gapEntries = generateEntries(
+    heart,
+    gapStart.getTime(),
+    gapEnd.getTime(),
+    config.commitIntervalMs,
+    config.eventThresholdPercent,
+  );
+
+  if (gapEntries.length > 0) {
+    await gitEngine.fastImport(gapEntries);
+    console.log(`✓ Gap filled: ${gapEntries.length} commits\n`);
+  }
+}
+
+function logCommit(entry: CommitEntry): void {
+  if (entry.type === "baseline") {
+    const { avgBpm, minBpm, maxBpm, beatCount } = entry.data;
+    console.log(`  ♥ baseline ${avgBpm}bpm (${minBpm}–${maxBpm}) x${beatCount}`);
+  } else {
+    console.log(`  ⚡ ${entry.data.kind} ${entry.data.bpm}bpm`);
+  }
+}
+
+function printLiveStart(heart: MockHeart, speed: number, commitIntervalMs: number): void {
   console.log(`♥ Mock heart started (speed: ${speed}x)`);
   console.log(`  1 real second = ${speed} simulated seconds`);
   if (speed >= 60) console.log(`  ≈ ${(speed / 60).toFixed(1)} simulated minutes per real second`);
-  console.log(`  Commit interval: ${config.commitIntervalMs / 1000}s simulated`);
+  console.log(`  Commit interval: ${commitIntervalMs / 1000}s simulated`);
   console.log(`  Activities planned: ${heart.getActivityPlan().length}`);
   for (const act of heart.getActivityPlan()) {
     const h = Math.floor(act.startMinute / 60);
@@ -233,15 +201,21 @@ export async function mockCommand(options: MockOptions = {}): Promise<void> {
     );
   }
   console.log();
+}
 
+/** Feed `buffer` one 5 s sample per tick, starting now, flushing a baseline every commit interval. */
+function startTicker(
+  heart: MockHeart,
+  buffer: BeatBuffer,
+  speed: number,
+  commitIntervalMs: number,
+): ReturnType<typeof setInterval> {
+  const simStepMs = 5000;
   let simTime = Date.now();
   let lastDay = new Date(simTime).getDate();
   let lastFlush = simTime;
 
-  const sampleIntervalReal = 5000 / speed;
-  const simStepMs = 5000;
-
-  const ticker = setInterval(async () => {
+  return setInterval(async () => {
     simTime += simStepMs;
     const simDate = new Date(simTime);
 
@@ -261,25 +235,75 @@ export async function mockCommand(options: MockOptions = {}): Promise<void> {
       rrIntervals: [Math.round(60000 / bpm)],
     });
 
-    if (simTime - lastFlush >= config.commitIntervalMs) {
+    if (simTime - lastFlush >= commitIntervalMs) {
       await buffer.flushWindow();
       lastFlush = simTime;
     }
-  }, sampleIntervalReal);
+  }, simStepMs / speed);
+}
+
+/** Simulate the heart live until SIGINT or SIGTERM, first filling any gap since `latestBeat`. */
+async function runLive(
+  gitEngine: GitEngine,
+  heart: MockHeart,
+  config: CoraConfig,
+  requestedSpeed: number,
+  latestBeat: Date | null,
+): Promise<void> {
+  const buffer = new BeatBuffer(config.eventThresholdPercent);
+  buffer.setListener(commitListener(gitEngine, new OfflineQueue(), logCommit));
+
+  await fillGap(gitEngine, heart, config, latestBeat);
+
+  // Only advertise the PID once setup has succeeded
+  await writeFile(pidPath(), String(process.pid));
+
+  // One 5 s sample every 50 ms of real time at most
+  let speed = requestedSpeed;
+  if (speed > MAX_LIVE_SPEED) {
+    console.log(`  Speed ${speed}x is above the live maximum; using ${MAX_LIVE_SPEED}x`);
+    speed = MAX_LIVE_SPEED;
+  }
+  printLiveStart(heart, speed, config.commitIntervalMs);
+
+  const ticker = startTicker(heart, buffer, speed, config.commitIntervalMs);
 
   const shutdown = async () => {
     console.log("\n♥ Stopping mock heart...");
     clearInterval(ticker);
     await buffer.flushWindow();
     await gitEngine.shutdown();
-    try {
-      await rm(pidPath());
-    } catch {
-      /* ignore */
-    }
+    await removePidFile();
     console.log("♥ Goodbye.");
   };
 
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+}
+
+export async function mockCommand(options: MockOptions = {}): Promise<void> {
+  const { speed, startDate, endDate } = parseOptions(options);
+  const config = await requireConfig();
+  const backfillEnd = endDate ?? new Date();
+
+  const gitEngine = new GitEngine();
+  await gitEngine.init(config);
+  console.log("✓ Git repo ready");
+
+  const latestBeat = await gitEngine.getLatestBeatTimestamp();
+  const heart = new MockHeart();
+
+  if (!startDate) {
+    if (latestBeat) console.log(`♥ Last beat: ${latestBeat.toISOString()}`);
+    await runLive(gitEngine, heart, config, speed, latestBeat);
+    return;
+  }
+
+  // Resume after the latest beat rather than duplicating beats already in the repo
+  let backfillStart = startDate;
+  if (latestBeat && latestBeat.getTime() + 1 > startDate.getTime()) {
+    backfillStart = new Date(latestBeat.getTime() + 1);
+    console.log(`♥ Resuming from last beat: ${latestBeat.toISOString()}`);
+  }
+  await backfill(gitEngine, heart, config, backfillStart, backfillEnd);
 }

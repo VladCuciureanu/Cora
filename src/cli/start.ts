@@ -1,17 +1,25 @@
 import { rm, writeFile } from "node:fs/promises";
 import { BeatBuffer, type BeatListener } from "../beats.ts";
 import { pidPath, requireConfig } from "../config.ts";
-import { GitEngine } from "../git.ts";
+import { type CommitEntry, GitEngine } from "../git.ts";
 import { OfflineQueue } from "../queue.ts";
 import { IngestionServer } from "../server.ts";
 import { replayQueue } from "./replay.ts";
 
-/** Commit baselines and events as they arrive; anything that fails to commit is queued for replay. */
-export function commitListener(gitEngine: GitEngine, queue: OfflineQueue): BeatListener {
+/**
+ * Commit baselines and events as they arrive; anything that fails to commit is
+ * queued for replay. `onCommitted` is told about each successful commit.
+ */
+export function commitListener(
+  gitEngine: GitEngine,
+  queue: OfflineQueue,
+  onCommitted?: (entry: CommitEntry) => void,
+): BeatListener {
   return {
     onBaseline: async (data) => {
       try {
         await gitEngine.commitBaseline(data);
+        onCommitted?.({ type: "baseline", data });
       } catch (e) {
         console.error(`Baseline commit failed, queuing: ${e}`);
         await queue.enqueue({ type: "baseline", data });
@@ -20,6 +28,7 @@ export function commitListener(gitEngine: GitEngine, queue: OfflineQueue): BeatL
     onEvent: async (data) => {
       try {
         await gitEngine.commitEvent(data);
+        onCommitted?.({ type: "event", data });
       } catch (e) {
         console.error(`Event commit failed, queuing: ${e}`);
         await queue.enqueue({ type: "event", data });
