@@ -1,4 +1,17 @@
+import { execFile } from "node:child_process";
+import { stat } from "node:fs/promises";
 import { repoDir } from "../config/mod.ts";
+
+/** Run git and return stdout, ignoring a non-zero exit code (an empty repo yields empty output, not an error). */
+function gitStdout(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile("git", args, { cwd, maxBuffer: Infinity }, (err, stdout) => {
+      // A string code means git could not be spawned at all (e.g. ENOENT); a numeric one is just the exit code.
+      if (err && typeof err.code === "string") reject(err);
+      else resolve(stdout ?? "");
+    });
+  });
+}
 
 export interface StatsResult {
   totalCommits: number;
@@ -35,24 +48,12 @@ export function parseBpmsFromMessages(messages: string[]): number[] {
 
 export async function getStats(dir: string, today?: Date): Promise<StatsResult | null> {
   // Count total commits
-  const totalCmd = new Deno.Command("git", {
-    args: ["rev-list", "--count", "HEAD"],
-    cwd: dir,
-    stdout: "piped",
-    stderr: "piped",
-  });
-  const totalOut = await totalCmd.output();
-  const totalCommits = parseInt(new TextDecoder().decode(totalOut.stdout).trim(), 10);
+  const totalOut = await gitStdout(["rev-list", "--count", "HEAD"], dir);
+  const totalCommits = parseInt(totalOut.trim(), 10);
 
   // Get first and last commit dates
-  const logCmd = new Deno.Command("git", {
-    args: ["log", "--format=%aI", "--reverse"],
-    cwd: dir,
-    stdout: "piped",
-    stderr: "piped",
-  });
-  const logOut = await logCmd.output();
-  const dates = new TextDecoder().decode(logOut.stdout).trim().split("\n").filter(Boolean);
+  const logOut = await gitStdout(["log", "--format=%aI", "--reverse"], dir);
+  const dates = logOut.trim().split("\n").filter(Boolean);
 
   if (dates.length === 0) return null;
 
@@ -61,14 +62,8 @@ export async function getStats(dir: string, today?: Date): Promise<StatsResult |
   const streakDays = calculateStreak(dates, today ?? new Date());
 
   // Parse BPMs from commit messages
-  const msgCmd = new Deno.Command("git", {
-    args: ["log", "--format=%s"],
-    cwd: dir,
-    stdout: "piped",
-    stderr: "piped",
-  });
-  const msgOut = await msgCmd.output();
-  const messages = new TextDecoder().decode(msgOut.stdout).trim().split("\n");
+  const msgOut = await gitStdout(["log", "--format=%s"], dir);
+  const messages = msgOut.trim().split("\n");
   const bpms = parseBpmsFromMessages(messages);
   const avgBpm = bpms.length > 0 ? Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length) : null;
 
@@ -79,10 +74,10 @@ export async function statsCommand(): Promise<void> {
   const dir = repoDir();
 
   try {
-    await Deno.stat(`${dir}/.git`);
+    await stat(`${dir}/.git`);
   } catch {
     console.error("No heartbeat repo found. Run `cora start` first.");
-    Deno.exit(1);
+    process.exit(1);
   }
 
   const stats = await getStats(dir);

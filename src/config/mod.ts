@@ -1,5 +1,5 @@
-import { join } from "@std/path";
-import { ensureDir } from "@std/fs";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 export interface CoraConfig {
   githubPat: string;
@@ -17,11 +17,11 @@ const DEFAULTS: Pick<CoraConfig, "commitIntervalMs" | "eventThresholdPercent" | 
 };
 
 function configDir(): string {
-  const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? ".";
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? ".";
   return join(home, ".config", "cora");
 }
 
-function configPath(): string {
+export function configPath(): string {
   return join(configDir(), "config.json");
 }
 
@@ -37,18 +37,21 @@ export function queuePath(): string {
   return join(configDir(), "queue.jsonl");
 }
 
-export async function loadConfig(): Promise<CoraConfig | null> {
+export async function loadConfig(path = configPath()): Promise<CoraConfig | null> {
   try {
-    const text = await Deno.readTextFile(configPath());
+    const text = await readFile(path, "utf8");
     return { ...DEFAULTS, ...JSON.parse(text) };
   } catch {
     return null;
   }
 }
 
-export async function saveConfig(config: CoraConfig): Promise<void> {
-  await ensureDir(configDir());
-  await Deno.writeTextFile(configPath(), JSON.stringify(config, null, 2) + "\n");
+/** Write the config (it holds the GitHub PAT) readable by the owner only. */
+export async function saveConfig(config: CoraConfig, path = configPath()): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
+  // `mode` only applies when the file is created; tighten an existing file too
+  await chmod(path, 0o600);
 }
 
 export function generateApiKey(): string {

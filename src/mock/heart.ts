@@ -20,16 +20,34 @@ interface ActivityBurst {
   rampMin: number;     // minutes to reach peak
 }
 
+/** Small seeded PRNG (mulberry32) returning floats in [0, 1). */
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export class MockHeart {
   private baseRestingHr: number;
   private activities: ActivityBurst[];
   private noiseState = 0;
   private timezone: string;
+  private random: () => number;
 
+  /**
+   * With a `seed`, both the noise and the activity plans are deterministic;
+   * without one, activities are planned with Math.random.
+   */
   constructor(opts?: { restingHr?: number; timezone?: string; seed?: number }) {
     this.baseRestingHr = opts?.restingHr ?? 68;
     this.timezone = opts?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (opts?.seed !== undefined) this.noiseState = opts.seed;
+    this.random = opts?.seed !== undefined ? seededRandom(opts.seed) : Math.random;
     this.activities = this.planDayActivities();
   }
 
@@ -119,32 +137,32 @@ export class MockHeart {
   /** Plan 3–6 random activity bursts for a day. */
   private planDayActivities(): ActivityBurst[] {
     const activities: ActivityBurst[] = [];
-    const count = 3 + Math.floor(Math.random() * 4); // 3–6 bursts
+    const count = 3 + Math.floor(this.random() * 4); // 3–6 bursts
 
     for (let i = 0; i < count; i++) {
-      const kind = Math.random();
+      const kind = this.random();
       if (kind < 0.3) {
         // Light activity: walking, stairs (HR 85–100, 2–5 min)
         activities.push({
-          startMinute: 480 + Math.floor(Math.random() * 780), // 08:00–21:00
-          durationMin: 2 + Math.floor(Math.random() * 4),
-          peakBpm: 85 + Math.floor(Math.random() * 16),
+          startMinute: 480 + Math.floor(this.random() * 780), // 08:00–21:00
+          durationMin: 2 + Math.floor(this.random() * 4),
+          peakBpm: 85 + Math.floor(this.random() * 16),
           rampMin: 1,
         });
       } else if (kind < 0.7) {
         // Moderate activity: brisk walk, cycling (HR 110–140, 10–30 min)
         activities.push({
-          startMinute: 480 + Math.floor(Math.random() * 720), // 08:00–20:00
-          durationMin: 10 + Math.floor(Math.random() * 21),
-          peakBpm: 110 + Math.floor(Math.random() * 31),
+          startMinute: 480 + Math.floor(this.random() * 720), // 08:00–20:00
+          durationMin: 10 + Math.floor(this.random() * 21),
+          peakBpm: 110 + Math.floor(this.random() * 31),
           rampMin: 3,
         });
       } else {
         // Intense: running, HIIT (HR 150–185, 15–45 min)
         activities.push({
-          startMinute: 360 + Math.floor(Math.random() * 720), // 06:00–18:00
-          durationMin: 15 + Math.floor(Math.random() * 31),
-          peakBpm: 150 + Math.floor(Math.random() * 36),
+          startMinute: 360 + Math.floor(this.random() * 720), // 06:00–18:00
+          durationMin: 15 + Math.floor(this.random() * 31),
+          peakBpm: 150 + Math.floor(this.random() * 36),
           rampMin: 5,
         });
       }

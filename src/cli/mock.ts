@@ -1,6 +1,7 @@
+import { rm, writeFile } from "node:fs/promises";
 import { loadConfig, pidPath } from "../config/mod.ts";
-import { GitEngine, type CommitEntry, type BaselineData } from "../git/mod.ts";
-import { BeatBuffer } from "../beats/mod.ts";
+import { GitEngine, type CommitEntry } from "../git/mod.ts";
+import { BeatBuffer, detectDeviation, pushRolling, summarizeWindow } from "../beats/mod.ts";
 import { OfflineQueue } from "../queue/mod.ts";
 import { MockHeart } from "../mock/heart.ts";
 
@@ -14,13 +15,13 @@ function parseArgs(args: string[]): { speed: number; startDate: Date | null; end
       startDate = new Date(args[++i]);
       if (isNaN(startDate.getTime())) {
         console.error(`Invalid --from date: ${args[i]}`);
-        Deno.exit(1);
+        process.exit(1);
       }
     } else if (args[i] === "--to" && args[i + 1]) {
       endDate = new Date(args[++i]);
       if (isNaN(endDate.getTime())) {
         console.error(`Invalid --to date: ${args[i]}`);
-        Deno.exit(1);
+        process.exit(1);
       }
     } else if (args[i] === "--speed" && args[i + 1]) {
       speed = parseFloat(args[++i]);
@@ -31,14 +32,14 @@ function parseArgs(args: string[]): { speed: number; startDate: Date | null; end
 
   if (isNaN(speed) || speed <= 0) {
     console.error("Speed must be a positive number (e.g. 60 = 1 hour/min, 1440 = 1 day/min)");
-    Deno.exit(1);
+    process.exit(1);
   }
 
   return { speed, startDate, endDate };
 }
 
 /** Generate all commit entries for a date range without touching git. */
-function generateEntries(
+export function generateEntries(
   heart: MockHeart,
   startMs: number,
   endMs: number,
@@ -67,37 +68,19 @@ function generateEntries(
     const bpm = heart.bpmAt(simDate);
 
     // Event detection against rolling average
-    if (rollingBpms.length >= 5) {
-      const avg = rollingBpms.reduce((a, b) => a + b, 0) / rollingBpms.length;
-      const deviation = Math.abs(bpm - avg) / avg * 100;
-      if (deviation >= thresholdPercent) {
-        entries.push({
-          type: "event",
-          data: {
-            timestamp: simDate.toISOString(),
-            bpm,
-            kind: bpm > avg ? "spike" : "drop",
-          },
-        });
-      }
+    const kind = detectDeviation(rollingBpms, bpm, thresholdPercent);
+    if (kind) {
+      entries.push({ type: "event", data: { timestamp: simDate.toISOString(), bpm, kind } });
     }
 
-    rollingBpms.push(bpm);
-    if (rollingBpms.length > 30) rollingBpms.shift();
+    pushRolling(rollingBpms, bpm);
 
     windowSamples.push({ bpm, timestamp: simDate.toISOString() });
 
     // Flush window at commit interval
     if (simTime - lastFlush >= commitIntervalMs) {
-      if (windowSamples.length > 0) {
-        const bpms = windowSamples.map((s) => s.bpm);
-        const baseline: BaselineData = {
-          timestamp: windowSamples[windowSamples.length - 1].timestamp,
-          avgBpm: Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length),
-          minBpm: Math.min(...bpms),
-          maxBpm: Math.max(...bpms),
-          beatCount: windowSamples.length,
-        };
+      const baseline = summarizeWindow(windowSamples);
+      if (baseline) {
         entries.push({ type: "baseline", data: baseline });
         windowSamples = [];
       }
@@ -106,35 +89,22 @@ function generateEntries(
   }
 
   // Flush remaining
-  if (windowSamples.length > 0) {
-    const bpms = windowSamples.map((s) => s.bpm);
-    entries.push({
-      type: "baseline",
-      data: {
-        timestamp: windowSamples[windowSamples.length - 1].timestamp,
-        avgBpm: Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length),
-        minBpm: Math.min(...bpms),
-        maxBpm: Math.max(...bpms),
-        beatCount: windowSamples.length,
-      },
-    });
-  }
+  const baseline = summarizeWindow(windowSamples);
+  if (baseline) entries.push({ type: "baseline", data: baseline });
 
   return entries;
 }
 
-export async function mockCommand(): Promise<void> {
+export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
   const config = await loadConfig();
   if (!config) {
     console.error("No config found. Run `cora init` first.");
-    Deno.exit(1);
+    process.exit(1);
   }
 
-  let { speed, startDate, endDate } = parseArgs(Deno.args);
+  let { speed, startDate, endDate } = parseArgs(argv);
   const backfillMode = startDate !== null;
   const backfillEnd = endDate ?? new Date();
-
-  await Deno.writeTextFile(pidPath(), String(Deno.pid));
 
   const gitEngine = new GitEngine();
   await gitEngine.init();
@@ -159,39 +129,42 @@ export async function mockCommand(): Promise<void> {
   if (backfillMode) {
     if (startDate!.getTime() >= backfillEnd.getTime()) {
       console.log("Nothing to backfill — already up to date.");
-      try { await Deno.remove(pidPath()); } catch { /* ignore */ }
       return;
     }
 
-    const days = Math.ceil((backfillEnd.getTime() - startDate!.getTime()) / 86_400_000);
-    console.log(`♥ Generating ${days} days of heartbeat data...`);
+    await writeFile(pidPath(), String(process.pid));
+    try {
+      const days = Math.ceil((backfillEnd.getTime() - startDate!.getTime()) / 86_400_000);
+      console.log(`♥ Generating ${days} days of heartbeat data...`);
 
-    const entries = generateEntries(
-      heart,
-      startDate!.getTime(),
-      backfillEnd.getTime(),
-      config.commitIntervalMs,
-      config.eventThresholdPercent,
-    );
+      const entries = generateEntries(
+        heart,
+        startDate!.getTime(),
+        backfillEnd.getTime(),
+        config.commitIntervalMs,
+        config.eventThresholdPercent,
+      );
 
-    console.log(`✓ Generated ${entries.length} commits. Fast-importing into git...`);
+      console.log(`✓ Generated ${entries.length} commits. Fast-importing into git...`);
 
-    await gitEngine.fastImport(entries, (done, total) => {
-      const pct = Math.round((done / total) * 100);
-      Deno.stdout.writeSync(new TextEncoder().encode(`\r  Importing: ${done}/${total} (${pct}%)`));
-    });
+      await gitEngine.fastImport(entries, (done, total) => {
+        const pct = Math.round((done / total) * 100);
+        process.stdout.write(`\r  Importing: ${done}/${total} (${pct}%)`);
+      });
 
-    console.log("\n✓ Fast-import complete. Pushing...");
+      console.log("\n✓ Fast-import complete. Pushing...");
 
-    await gitEngine.shutdown();
-    try { await Deno.remove(pidPath()); } catch { /* ignore */ }
+      await gitEngine.shutdown();
 
-    console.log(`✓ Backfill complete: ${entries.length} commits across ${days} day(s)`);
+      console.log(`✓ Backfill complete: ${entries.length} commits across ${days} day(s)`);
+    } finally {
+      try { await rm(pidPath()); } catch { /* ignore */ }
+    }
     return;
   }
 
   // --- Live mode ---
-  const buffer = new BeatBuffer(config.commitIntervalMs, config.eventThresholdPercent);
+  const buffer = new BeatBuffer(config.eventThresholdPercent);
 
   buffer.setListener({
     onBaseline: async (data) => {
@@ -233,6 +206,9 @@ export async function mockCommand(): Promise<void> {
       console.log(`✓ Gap filled: ${gapEntries.length} commits\n`);
     }
   }
+
+  // Only advertise the PID once setup has succeeded
+  await writeFile(pidPath(), String(process.pid));
 
   console.log(`♥ Mock heart started (speed: ${speed}x)`);
   console.log(`  1 real second = ${speed} simulated seconds`);
@@ -282,11 +258,11 @@ export async function mockCommand(): Promise<void> {
     clearInterval(ticker);
     await buffer.flushWindow();
     await gitEngine.shutdown();
-    try { await Deno.remove(pidPath()); } catch { /* ignore */ }
+    try { await rm(pidPath()); } catch { /* ignore */ }
     console.log("♥ Goodbye.");
-    Deno.exit(0);
+    process.exit(0);
   };
 
-  Deno.addSignalListener("SIGINT", shutdown);
-  Deno.addSignalListener("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }

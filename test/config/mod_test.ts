@@ -1,64 +1,93 @@
-import { assertEquals, assertNotEquals } from "jsr:@std/assert";
-import { generateApiKey, type CoraConfig } from "../../src/config/mod.ts";
-import { join } from "@std/path";
-import { ensureDir } from "@std/fs";
+import assert from "node:assert/strict";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import { generateApiKey, loadConfig, saveConfig, type CoraConfig } from "../../src/config/mod.ts";
 
-Deno.test("generateApiKey - returns 64-char hex string", () => {
+test("generateApiKey - returns 64-char hex string", () => {
   const key = generateApiKey();
-  assertEquals(key.length, 64);
-  assertEquals(/^[0-9a-f]+$/.test(key), true);
+  assert.deepEqual(key.length, 64);
+  assert.deepEqual(/^[0-9a-f]+$/.test(key), true);
 });
 
-Deno.test("generateApiKey - generates unique keys", () => {
+test("generateApiKey - generates unique keys", () => {
   const key1 = generateApiKey();
   const key2 = generateApiKey();
-  assertNotEquals(key1, key2);
+  assert.notDeepEqual(key1, key2);
 });
 
-Deno.test("config - save and load roundtrip", async () => {
-  const tmpDir = await Deno.makeTempDir({ prefix: "cora-config-test-" });
-  const configPath = join(tmpDir, "config.json");
+async function withTempDir(fn: (dir: string) => Promise<void>) {
+  const dir = await mkdtemp(join(tmpdir(), "cora-config-test-"));
+  try {
+    await fn(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
 
-  const config: CoraConfig = {
-    githubPat: "ghp_testtoken123",
-    repoUrl: "https://github.com/test/repo",
-    apiKey: "abc123",
-    commitIntervalMs: 300_000,
-    eventThresholdPercent: 20,
-    port: 7331,
-  };
+test("saveConfig/loadConfig - roundtrip, creating the directory", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "nested", "config.json");
+    const config: CoraConfig = {
+      githubPat: "ghp_testtoken123",
+      repoUrl: "https://github.com/test/repo",
+      apiKey: "abc123",
+      commitIntervalMs: 60_000,
+      eventThresholdPercent: 15,
+      port: 8080,
+    };
 
-  // Save
-  await ensureDir(tmpDir);
-  await Deno.writeTextFile(configPath, JSON.stringify(config, null, 2) + "\n");
-
-  // Load
-  const text = await Deno.readTextFile(configPath);
-  const loaded: CoraConfig = JSON.parse(text);
-
-  assertEquals(loaded.githubPat, config.githubPat);
-  assertEquals(loaded.repoUrl, config.repoUrl);
-  assertEquals(loaded.apiKey, config.apiKey);
-  assertEquals(loaded.commitIntervalMs, config.commitIntervalMs);
-  assertEquals(loaded.eventThresholdPercent, config.eventThresholdPercent);
-  assertEquals(loaded.port, config.port);
-
-  await Deno.remove(tmpDir, { recursive: true });
+    await saveConfig(config, path);
+    assert.deepEqual(await loadConfig(path), config);
+    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), config);
+  });
 });
 
-Deno.test("config - load returns all fields", async () => {
-  const tmpDir = await Deno.makeTempDir({ prefix: "cora-config-test-" });
-  const configPath = join(tmpDir, "config.json");
+test("loadConfig - fills in defaults for missing optional fields", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json");
+    await writeFile(path, JSON.stringify({ githubPat: "ghp_x", repoUrl: "https://x", apiKey: "key", port: 9000 }));
 
-  const partial = { githubPat: "ghp_x", repoUrl: "https://x", apiKey: "key" };
-  await Deno.writeTextFile(configPath, JSON.stringify(partial));
+    assert.deepEqual(await loadConfig(path), {
+      githubPat: "ghp_x",
+      repoUrl: "https://x",
+      apiKey: "key",
+      commitIntervalMs: 5 * 60 * 1000,
+      eventThresholdPercent: 20,
+      port: 9000,
+    });
+  });
+});
 
-  const text = await Deno.readTextFile(configPath);
-  const loaded = JSON.parse(text);
+test("loadConfig - returns null for a missing or malformed file", async () => {
+  await withTempDir(async (dir) => {
+    assert.deepEqual(await loadConfig(join(dir, "missing.json")), null);
 
-  assertEquals(loaded.githubPat, "ghp_x");
-  assertEquals(loaded.repoUrl, "https://x");
-  assertEquals(loaded.apiKey, "key");
+    const path = join(dir, "config.json");
+    await writeFile(path, "{ not json");
+    assert.deepEqual(await loadConfig(path), null);
+  });
+});
 
-  await Deno.remove(tmpDir, { recursive: true });
+test("saveConfig - config file is readable by the owner only", {
+  skip: process.platform === "win32" ? "POSIX file modes not supported on Windows" : false,
+}, async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), "cora-config-test-"));
+  try {
+    const path = join(tmpDir, "cora", "config.json");
+    const config: CoraConfig = {
+      githubPat: "ghp_x", repoUrl: "https://x", apiKey: "key",
+      commitIntervalMs: 300_000, eventThresholdPercent: 20, port: 7331,
+    };
+    await saveConfig(config, path);
+    assert.deepEqual((await stat(path)).mode & 0o777, 0o600);
+
+    // An existing world-readable config is tightened on the next save
+    await chmod(path, 0o644);
+    await saveConfig(config, path);
+    assert.deepEqual((await stat(path)).mode & 0o777, 0o600);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
 });

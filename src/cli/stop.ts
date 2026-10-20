@@ -1,21 +1,23 @@
+import { readFile, rm } from "node:fs/promises";
 import { pidPath } from "../config/mod.ts";
 
-export async function stopCommand(): Promise<void> {
+export async function stopCommand(pidFile = pidPath()): Promise<void> {
   let pid: number;
   try {
-    const text = await Deno.readTextFile(pidPath());
+    const text = await readFile(pidFile, "utf8");
     pid = parseInt(text.trim(), 10);
   } catch {
     console.error("Cora is not running (no PID file found).");
-    Deno.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   try {
-    Deno.kill(pid, "SIGTERM");
+    process.kill(pid, "SIGTERM");
     console.log(`♥ Sent SIGTERM to Cora (PID ${pid})`);
-    await Deno.remove(pidPath());
+    await rm(pidFile);
   } catch {
     console.error(`Failed to stop Cora (PID ${pid}). Process may have already exited.`);
-    try { await Deno.remove(pidPath()); } catch { /* ignore */ }
+    try { await rm(pidFile); } catch { /* ignore */ }
   }
 }

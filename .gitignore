@@ -1,5 +1,4 @@
 notes/
 dist/
-cora
+node_modules/
 .herodotus.toml
-deno.lock

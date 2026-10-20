@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { initCommand } from "./cli/init.ts";
 import { startCommand } from "./cli/start.ts";
 import { stopCommand } from "./cli/stop.ts";
@@ -37,23 +38,23 @@ const commands: Record<string, () => Promise<void>> = {
 };
 
 async function main() {
-  const [command, ...args] = Deno.args;
+  const [command] = process.argv.slice(2);
 
   if (!command || command === "--help" || command === "-h") {
     console.log(HELP);
-    Deno.exit(0);
+    process.exit(0);
   }
 
   if (command === "--version" || command === "-v") {
     console.log(`cora v${VERSION}`);
-    Deno.exit(0);
+    process.exit(0);
   }
 
   const handler = commands[command];
   if (!handler) {
     console.error(`Unknown command: ${command}`);
     console.error('Run "cora --help" for usage.');
-    Deno.exit(1);
+    process.exit(1);
   }
 
   await handler();

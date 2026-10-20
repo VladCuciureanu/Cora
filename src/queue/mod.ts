@@ -1,11 +1,7 @@
-import { ensureDir } from "@std/fs";
-import { dirname } from "@std/path";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { queuePath } from "../config/mod.ts";
-import type { BaselineData, EventData } from "../git/mod.ts";
-
-type QueueEntry =
-  | { type: "baseline"; data: BaselineData }
-  | { type: "event"; data: EventData };
+import type { CommitEntry } from "../git/mod.ts";
 
 export class OfflineQueue {
   private path: string;
@@ -14,20 +10,20 @@ export class OfflineQueue {
     this.path = path ?? queuePath();
   }
 
-  async enqueue(entry: QueueEntry): Promise<void> {
-    await ensureDir(dirname(this.path));
-    await Deno.writeTextFile(this.path, JSON.stringify(entry) + "\n", { append: true });
+  async enqueue(entry: CommitEntry): Promise<void> {
+    await mkdir(dirname(this.path), { recursive: true });
+    await appendFile(this.path, JSON.stringify(entry) + "\n");
   }
 
-  async drain(): Promise<QueueEntry[]> {
+  async drain(): Promise<CommitEntry[]> {
     let text: string;
     try {
-      text = await Deno.readTextFile(this.path);
+      text = await readFile(this.path, "utf8");
     } catch {
       return [];
     }
 
-    const entries: QueueEntry[] = [];
+    const entries: CommitEntry[] = [];
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
       try {
@@ -38,13 +34,48 @@ export class OfflineQueue {
     }
 
     // Clear the queue file
-    await Deno.writeTextFile(this.path, "");
+    await writeFile(this.path, "");
     return entries;
+  }
+
+  /**
+   * Drain the queue, passing each entry to `handler` in order. Entries whose
+   * handler throws are put back at the front of the queue (in their original
+   * order, ahead of anything enqueued meanwhile) so they are retried later.
+   */
+  async process(
+    handler: (entry: CommitEntry) => Promise<void>,
+  ): Promise<{ processed: number; failed: { entry: CommitEntry; error: unknown }[] }> {
+    const entries = await this.drain();
+    const failed: { entry: CommitEntry; error: unknown }[] = [];
+    let processed = 0;
+    for (const entry of entries) {
+      try {
+        await handler(entry);
+        processed++;
+      } catch (error) {
+        failed.push({ entry, error });
+      }
+    }
+    if (failed.length > 0) await this.requeueFront(failed.map((f) => f.entry));
+    return { processed, failed };
+  }
+
+  private async requeueFront(entries: CommitEntry[]): Promise<void> {
+    let rest = "";
+    try {
+      rest = await readFile(this.path, "utf8");
+    } catch {
+      // queue file missing — nothing enqueued meanwhile
+    }
+    const head = entries.map((e) => JSON.stringify(e) + "\n").join("");
+    await mkdir(dirname(this.path), { recursive: true });
+    await writeFile(this.path, head + rest);
   }
 
   async size(): Promise<number> {
     try {
-      const text = await Deno.readTextFile(this.path);
+      const text = await readFile(this.path, "utf8");
       return text.split("\n").filter((l) => l.trim()).length;
     } catch {
       return 0;

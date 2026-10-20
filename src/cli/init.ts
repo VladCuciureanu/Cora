@@ -1,16 +1,33 @@
 import { loadConfig, saveConfig, generateApiKey, type CoraConfig } from "../config/mod.ts";
-import { generateQrCode, renderToUnicode } from "@openjs/denoqr";
+import { networkInterfaces } from "node:os";
+import { createInterface, type Interface } from "node:readline";
+import QRCode from "qrcode";
 
-function prompt(message: string, defaultValue?: string): string {
+// One shared line reader so piped stdin (several answers arriving at once) isn't dropped between prompts.
+let rl: Interface | null = null;
+let lines: AsyncIterator<string> | null = null;
+
+async function prompt(message: string, defaultValue?: string): Promise<string> {
   const suffix = defaultValue ? ` [${defaultValue}]` : "";
-  const input = globalThis.prompt(`${message}${suffix}:`);
+  process.stdout.write(`${message}${suffix}: `);
+  rl ??= createInterface({ input: process.stdin });
+  lines ??= rl[Symbol.asyncIterator]();
+  const { value, done } = await lines.next();
+  const input: string | null = done ? null : value;
   return input?.trim() || defaultValue || "";
+}
+
+function closePrompt(): void {
+  rl?.close();
+  rl = null;
+  lines = null;
 }
 
 function getLocalIp(): string | null {
   try {
-    const ifaces = Deno.networkInterfaces();
+    const ifaces = Object.values(networkInterfaces()).flat();
     for (const iface of ifaces) {
+      if (!iface) continue;
       if (iface.family === "IPv4" && !iface.address.startsWith("127.")) {
         return iface.address;
       }
@@ -24,8 +41,9 @@ function getLocalIp(): string | null {
 export async function initCommand(): Promise<void> {
   const existing = await loadConfig();
   if (existing) {
-    const overwrite = prompt("Config already exists. Overwrite? (y/N)", "N");
+    const overwrite = await prompt("Config already exists. Overwrite? (y/N)", "N");
     if (overwrite.toLowerCase() !== "y") {
+      closePrompt();
       console.log("Aborted.");
       return;
     }
@@ -33,19 +51,20 @@ export async function initCommand(): Promise<void> {
 
   console.log("♥ Cora setup\n");
 
-  const githubPat = prompt("GitHub Personal Access Token (repo scope)");
+  const githubPat = await prompt("GitHub Personal Access Token (repo scope)");
   if (!githubPat) {
     console.error("PAT is required.");
-    Deno.exit(1);
+    process.exit(1);
   }
 
-  const repoUrl = prompt("Private repo URL (e.g. https://github.com/user/cora-heartbeat)");
+  const repoUrl = await prompt("Private repo URL (e.g. https://github.com/user/cora-heartbeat)");
   if (!repoUrl) {
     console.error("Repo URL is required.");
-    Deno.exit(1);
+    process.exit(1);
   }
 
-  const portStr = prompt("HTTP server port", "7331");
+  const portStr = await prompt("HTTP server port", "7331");
+  closePrompt();
   const port = parseInt(portStr, 10) || 7331;
 
   const apiKey = generateApiKey();
@@ -74,8 +93,7 @@ export async function initCommand(): Promise<void> {
 
   // QR code containing setup payload for easy phone scanning
   const qrPayload = JSON.stringify({ endpoint, key: apiKey });
-  const modules = generateQrCode(qrPayload, { ecc: "L" });
-  const qrString = renderToUnicode(modules);
+  const qrString = await QRCode.toString(qrPayload, { type: "utf8", errorCorrectionLevel: "L" });
 
   console.log("\n— Scan with your phone to copy setup info —\n");
   console.log(qrString);

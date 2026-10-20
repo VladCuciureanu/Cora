@@ -1,4 +1,5 @@
-import { assertEquals } from "jsr:@std/assert";
+import assert from "node:assert/strict";
+import { test } from "node:test";
 import { BeatBuffer } from "../../src/beats/mod.ts";
 import { IngestionServer } from "../../src/server/mod.ts";
 
@@ -6,7 +7,7 @@ const TEST_API_KEY = "testkey123";
 const TEST_PORT = 9876;
 
 async function withServer(fn: (base: string) => Promise<void>) {
-  const buffer = new BeatBuffer(300_000, 20);
+  const buffer = new BeatBuffer(20);
   buffer.setListener({ onBaseline: () => {}, onEvent: () => {} });
   const server = new IngestionServer(buffer, TEST_API_KEY, TEST_PORT);
   server.start();
@@ -22,27 +23,27 @@ async function withServer(fn: (base: string) => Promise<void>) {
   }
 }
 
-Deno.test("Server - health endpoint", async () => {
+test("Server - health endpoint", async () => {
   await withServer(async (base) => {
     const res = await fetch(`${base}/health`);
     const data = await res.json();
-    assertEquals(data.status, "alive");
+    assert.deepEqual(data.status, "alive");
   });
 });
 
-Deno.test("Server - rejects unauthorized", async () => {
+test("Server - rejects unauthorized", async () => {
   await withServer(async (base) => {
     const res = await fetch(`${base}/beat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ timestamp: new Date().toISOString(), bpm: 72 }),
     });
-    assertEquals(res.status, 401);
+    assert.deepEqual(res.status, 401);
     await res.body?.cancel();
   });
 });
 
-Deno.test("Server - accepts valid beat", async () => {
+test("Server - accepts valid beat", async () => {
   await withServer(async (base) => {
     const res = await fetch(`${base}/beat`, {
       method: "POST",
@@ -52,13 +53,13 @@ Deno.test("Server - accepts valid beat", async () => {
       },
       body: JSON.stringify({ timestamp: new Date().toISOString(), bpm: 72, rr_intervals: [833] }),
     });
-    assertEquals(res.status, 200);
+    assert.deepEqual(res.status, 200);
     const data = await res.json();
-    assertEquals(data.status, "ok");
+    assert.deepEqual(data.status, "ok");
   });
 });
 
-Deno.test("Server - deduplicates same timestamp", async () => {
+test("Server - deduplicates same timestamp", async () => {
   await withServer(async (base) => {
     const ts = new Date().toISOString();
     const headers = {
@@ -71,11 +72,11 @@ Deno.test("Server - deduplicates same timestamp", async () => {
     await res1.json();
     const res2 = await fetch(`${base}/beat`, { method: "POST", headers, body });
     const data = await res2.json();
-    assertEquals(data.status, "duplicate");
+    assert.deepEqual(data.status, "duplicate");
   });
 });
 
-Deno.test("Server - rejects invalid body", async () => {
+test("Server - rejects invalid body", async () => {
   await withServer(async (base) => {
     const res = await fetch(`${base}/beat`, {
       method: "POST",
@@ -85,7 +86,7 @@ Deno.test("Server - rejects invalid body", async () => {
       },
       body: JSON.stringify({ bpm: 72 }),
     });
-    assertEquals(res.status, 400);
+    assert.deepEqual(res.status, 400);
     await res.json();
   });
 });
