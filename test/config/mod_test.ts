@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { generateApiKey, type CoraConfig } from "../../src/config/mod.ts";
+import { generateApiKey, saveConfig, type CoraConfig } from "../../src/config/mod.ts";
 
 test("generateApiKey - returns 64-char hex string", () => {
   const key = generateApiKey();
@@ -63,4 +63,26 @@ test("config - load returns all fields", async () => {
   assert.deepEqual(loaded.apiKey, "key");
 
   await rm(tmpDir, { recursive: true, force: true });
+});
+
+test("saveConfig - config file is readable by the owner only", {
+  skip: process.platform === "win32" ? "POSIX file modes not supported on Windows" : false,
+}, async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), "cora-config-test-"));
+  try {
+    const path = join(tmpDir, "cora", "config.json");
+    const config: CoraConfig = {
+      githubPat: "ghp_x", repoUrl: "https://x", apiKey: "key",
+      commitIntervalMs: 300_000, eventThresholdPercent: 20, port: 7331,
+    };
+    await saveConfig(config, path);
+    assert.deepEqual((await stat(path)).mode & 0o777, 0o600);
+
+    // An existing world-readable config is tightened on the next save
+    await chmod(path, 0o644);
+    await saveConfig(config, path);
+    assert.deepEqual((await stat(path)).mode & 0o777, 0o600);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
 });
