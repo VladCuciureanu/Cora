@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { initCommand } from "./cli/init.ts";
 import { mockCommand } from "./cli/mock.ts";
@@ -26,7 +27,11 @@ Options:
   --version, -v      Show version
 `.trim();
 
-const VERSION = "0.1.0";
+/** The version from package.json, which sits one level above both src/ and dist/. */
+function version(): string {
+  const manifest = readFileSync(new URL("../package.json", import.meta.url), "utf8");
+  return (JSON.parse(manifest) as { version: string }).version;
+}
 
 interface Command {
   usage: string;
@@ -136,7 +141,7 @@ async function main(): Promise<void> {
   }
 
   if (name === "--version" || name === "-v") {
-    console.log(`cora v${VERSION}`);
+    console.log(`cora v${version()}`);
     return;
   }
 

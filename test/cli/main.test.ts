@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -131,5 +131,14 @@ test("cli - unknown arguments and missing values are usage errors", async () => 
       assert.match(stderr, /^cora: [^\n]*\n$/, args.join(" "));
       assert.match(stderr, error);
     }
+  });
+});
+
+test("cli - --version prints the package.json version", async () => {
+  await withHome(async (home) => {
+    const manifest = JSON.parse(await readFile(join(MAIN, "..", "..", "package.json"), "utf8"));
+    const { code, stdout } = await runCli(["--version"], home);
+    assert.equal(code, 0);
+    assert.equal(stdout.trim(), `cora v${manifest.version}`);
   });
 });
