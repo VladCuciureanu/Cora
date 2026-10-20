@@ -25,12 +25,16 @@ export type CommitEntry =
 
 const execFileAsync = promisify(execFile);
 
+const EVENT_KINDS = ["spike", "drop", "reconnect", "custom"] as const satisfies readonly EventData["kind"][];
+
 /**
  * Filename for a beat at the given timestamp. ':' is not allowed in Windows
  * filenames, so it is replaced with '-' (e.g. 2026-03-24T12-00-00.000Z.beat).
+ * Events carry their kind (e.g. 2026-03-24T12-00-00.000Z.spike.beat) so they
+ * never share a file with a baseline stamped at the same time.
  */
-export function beatFilename(timestamp: string): string {
-  return `${timestamp.replaceAll(":", "-")}.beat`;
+export function beatFilename(timestamp: string, kind?: EventData["kind"]): string {
+  return `${timestamp.replaceAll(":", "-")}${kind ? `.${kind}` : ""}.beat`;
 }
 
 /**
@@ -40,6 +44,8 @@ export function beatFilename(timestamp: string): string {
 export function parseBeatFilename(name: string): Date | null {
   if (!name.endsWith(".beat")) return null;
   let ts = name.slice(0, -".beat".length);
+  const kind = EVENT_KINDS.find((k) => ts.endsWith(`.${k}`));
+  if (kind) ts = ts.slice(0, -(kind.length + 1));
   const m = /^(\d{4}-\d{2}-\d{2}T\d{2})-(\d{2})(?:-(\d{2}(?:\.\d+)?))?(Z|[+-]\d{2}(?:-?\d{2})?)?$/.exec(ts);
   if (m) {
     const [, dateHour, minute, second, zone = ""] = m;
@@ -218,7 +224,7 @@ export class GitEngine {
   }
 
   private async commitEventUnlocked(data: EventData): Promise<void> {
-    const filename = beatFilename(data.timestamp);
+    const filename = beatFilename(data.timestamp, data.kind);
     const content = JSON.stringify({
       bpm: data.bpm,
       kind: data.kind,
@@ -321,7 +327,7 @@ export class GitEngine {
         commitMsg = `⚡ ${ed.bpm}bpm ${ed.kind} @ ${ts}`;
       }
 
-      const filename = `beats/${beatFilename(ts)}`;
+      const filename = `beats/${beatFilename(ts, isBaseline ? undefined : (data as EventData).kind)}`;
       const mark = markNum++;
       const contentBytes = encoder.encode(fileContent);
 

@@ -68,7 +68,7 @@ test("GitEngine - commitEvent creates beat file and commit", async () => {
       kind: "spike",
     });
 
-    const content = await readFile(join(dir, "beats", beatFilename(ts)), "utf8");
+    const content = await readFile(join(dir, "beats", beatFilename(ts, "spike")), "utf8");
     const data = JSON.parse(content);
     assert.deepEqual(data.bpm, 140);
     assert.deepEqual(data.kind, "spike");
@@ -191,10 +191,12 @@ test("beatFilename - contains no ':' and round-trips", () => {
     "2025-01-15T08:30:45Z",
     "2026-03-24T14:00:00+02:00",
   ]) {
-    const name = beatFilename(ts);
-    assert.ok(!name.includes(":"), `${name} should not contain ':'`);
-    assert.ok(name.endsWith(".beat"));
-    assert.deepEqual(parseBeatFilename(name)!.toISOString(), new Date(ts).toISOString());
+    for (const kind of [undefined, "spike", "drop", "reconnect", "custom"] as const) {
+      const name = beatFilename(ts, kind);
+      assert.ok(!name.includes(":"), `${name} should not contain ':'`);
+      assert.ok(name.endsWith(kind ? `.${kind}.beat` : ".beat"));
+      assert.deepEqual(parseBeatFilename(name)!.toISOString(), new Date(ts).toISOString());
+    }
   }
 });
 
@@ -215,7 +217,7 @@ test("GitEngine - beat files are written without ':' in the name", async () => {
     await engine.commitEvent({ timestamp: "2026-03-24T12:05:00.000Z", bpm: 99, kind: "custom" });
 
     const files = await git(["ls-files", "beats"], dir);
-    assert.deepEqual(files, "beats/2026-03-24T12-05-00.000Z.beat");
+    assert.deepEqual(files, "beats/2026-03-24T12-05-00.000Z.custom.beat");
 
     await engine.shutdown();
   });
@@ -391,11 +393,11 @@ test("GitEngine - fastImport appends commits on top of existing history", async 
       ".gitkeep",
       "README.md",
       "beats/2025-01-01T00-05-00.000Z.beat",
-      "beats/2025-01-01T00-07-30.000Z.beat",
+      "beats/2025-01-01T00-07-30.000Z.spike.beat",
       "beats/2025-01-01T00-10-00.000Z.beat",
     ]);
     assert.deepEqual(await readFile(join(dir, "README.md"), "utf8"), "hello\n");
-    assert.deepEqual(JSON.parse(await readFile(join(dir, "beats", "2025-01-01T00-07-30.000Z.beat"), "utf8")), {
+    assert.deepEqual(JSON.parse(await readFile(join(dir, "beats", "2025-01-01T00-07-30.000Z.spike.beat"), "utf8")), {
       bpm: 130,
       kind: "spike",
     });
@@ -418,6 +420,50 @@ test("GitEngine - fastImport with no entries is a no-op", async () => {
     assert.deepEqual(await git(["rev-list", "--count", "HEAD"], dir), "1");
     assert.deepEqual(called, false);
 
+    await engine.shutdown();
+  });
+});
+
+const SAME_TS = "2026-03-24T12:05:00.000Z";
+const SAME_TS_BASELINE = { timestamp: SAME_TS, avgBpm: 80, minBpm: 70, maxBpm: 150, beatCount: 60 };
+const SAME_TS_EVENT = { timestamp: SAME_TS, bpm: 150, kind: "spike" as const };
+
+async function assertBothBeatFilesKept(dir: string) {
+  const files = (await git(["ls-files", "beats"], dir)).split("\n");
+  assert.deepEqual(files.length, 2, `expected 2 beat files, got ${files.join(", ")}`);
+  for (const file of files) {
+    assert.ok(!file.includes(":"), `${file} should not contain ':'`);
+    assert.deepEqual(parseBeatFilename(file.slice("beats/".length))!.toISOString(), SAME_TS);
+  }
+  const contents = await Promise.all(files.map(async (f) => JSON.parse(await readFile(join(dir, f), "utf8"))));
+  assert.ok(contents.some((c) => c.kind === "spike" && c.bpm === 150), "event file was overwritten");
+  assert.ok(contents.some((c) => c.avg_bpm === 80), "baseline file missing");
+}
+
+test("GitEngine - event and baseline at the same timestamp both keep their file", async () => {
+  await withTempRepo(async (dir) => {
+    const engine = new GitEngine(dir, { skipPush: true });
+    await engine.initLocal();
+
+    await engine.commitEvent(SAME_TS_EVENT);
+    await engine.commitBaseline(SAME_TS_BASELINE);
+
+    await assertBothBeatFilesKept(dir);
+    await engine.shutdown();
+  });
+});
+
+test("GitEngine - fastImport keeps an event and baseline at the same timestamp", async () => {
+  await withTempRepo(async (dir) => {
+    const engine = new GitEngine(dir, { skipPush: true });
+    await engine.initLocal();
+
+    await engine.fastImport([
+      { type: "event", data: SAME_TS_EVENT },
+      { type: "baseline", data: SAME_TS_BASELINE },
+    ]);
+
+    await assertBothBeatFilesKept(dir);
     await engine.shutdown();
   });
 });

@@ -15,7 +15,7 @@ Commits look like:
 ⚡ 142bpm spike @ 2026-03-22T15:02:00Z  # event (immediate)
 ```
 
-Each commit creates a `beats/{timestamp}.beat` file with BPM, R-R intervals, and metadata.
+Each commit creates a `beats/{timestamp}.beat` file (`beats/{timestamp}.{kind}.beat` for spike/drop/reconnect events) with BPM, R-R intervals, and metadata.
 
 ## Setup
 
