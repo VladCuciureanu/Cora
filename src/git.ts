@@ -16,7 +16,7 @@ export interface BaselineData {
 export interface EventData {
   timestamp: string;
   bpm: number;
-  kind: "spike" | "drop" | "reconnect" | "custom";
+  kind: "spike" | "drop" | "reconnect";
 }
 
 export type CommitEntry =
@@ -25,12 +25,7 @@ export type CommitEntry =
 
 const execFileAsync = promisify(execFile);
 
-const EVENT_KINDS = [
-  "spike",
-  "drop",
-  "reconnect",
-  "custom",
-] as const satisfies readonly EventData["kind"][];
+const EVENT_KINDS = ["spike", "drop", "reconnect"] as const satisfies readonly EventData["kind"][];
 
 /**
  * Filename for a beat at the given timestamp. ':' is not allowed in Windows
@@ -429,10 +424,6 @@ export class GitEngine {
     if (!this.skipPush) {
       await this.flush();
     }
-  }
-
-  getDir(): string {
-    return this.dir;
   }
 
   async getLatestBeatTimestamp(): Promise<Date | null> {
