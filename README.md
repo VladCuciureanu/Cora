@@ -62,7 +62,7 @@ Content-Type: application/json
 {"timestamp": "2026-03-22T14:30:00.000Z", "bpm": 72, "rr_intervals": [830]}
 ```
 
-`timestamp` (an ISO 8601 date-time) and `bpm` (a number from 20 to 300) are required. Responses: `200 {"status":"ok"}`, `200 {"status":"duplicate"}` for a timestamp already seen, `400` for bad JSON or missing or invalid fields, `401` for a wrong key and `404` for any other route. Errors are JSON, `{"error":"<reason>"}`. `rr_intervals` is accepted but not stored.
+`timestamp` (an ISO 8601 date-time that exists, so not e.g. Feb 30) and `bpm` (a number from 20 to 300) are required. Responses: `200 {"status":"ok"}`, `200 {"status":"duplicate"}` for a timestamp already seen, `400` for bad JSON or missing or invalid fields, `401` for a wrong key and `404` for any other route. Errors are JSON, `{"error":"<reason>"}`. `rr_intervals` is accepted but not stored.
 
 `GET /health` needs no key and returns only `{"status":"alive"}`. `GET /status` needs the same `Authorization` header as `/beat` and returns `{"status":"alive","bpm":<latest or null>}`; `cora status` reads it. The server listens on all interfaces (`0.0.0.0`).
 

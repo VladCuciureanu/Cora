@@ -28,16 +28,31 @@ interface BeatPayload {
 const MIN_BPM = 20;
 const MAX_BPM = 300;
 
+/**
+ * Whether `value` is an ISO 8601 date-time naming a real calendar time. Date
+ * parsing accepts days like Feb 30, so the fields must also survive a round trip.
+ */
+function isIsoDateTime(value: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(value);
+  if (!m || Number.isNaN(Date.parse(value))) return false;
+  const [year, month, day, hour, minute, second = 0] = m.slice(1).map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  return (
+    d.getUTCFullYear() === year &&
+    d.getUTCMonth() === month - 1 &&
+    d.getUTCDate() === day &&
+    d.getUTCHours() === hour &&
+    d.getUTCMinutes() === minute &&
+    d.getUTCSeconds() === second
+  );
+}
+
 /** Why `body` is not a valid beat payload, or null if it is one. */
 function payloadError(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return "Body must be a JSON object";
   const { timestamp, bpm } = body as Record<string, unknown>;
   if (!timestamp || bpm === undefined) return "Missing timestamp or bpm";
-  if (
-    typeof timestamp !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(timestamp) ||
-    Number.isNaN(Date.parse(timestamp))
-  ) {
+  if (typeof timestamp !== "string" || !isIsoDateTime(timestamp)) {
     return "timestamp must be an ISO 8601 date-time";
   }
   if (typeof bpm !== "number" || !(bpm >= MIN_BPM && bpm <= MAX_BPM)) {

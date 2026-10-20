@@ -113,6 +113,9 @@ test("Server - rejects an out-of-range bpm or unparseable timestamp", async () =
       { timestamp, bpm: "72" },
       { timestamp: "garbage", bpm: 72 },
       { timestamp: "2026-13-45T00:00:00Z", bpm: 72 },
+      { timestamp: "2026-02-30T10:00:00Z", bpm: 72 },
+      { timestamp: "2026-04-31T10:00:00+02:00", bpm: 72 },
+      { timestamp: "2026-03-24T24:30:00Z", bpm: 72 },
       { timestamp: "March 7, 2026", bpm: 72 },
       { timestamp: 1_774_000_000_000, bpm: 72 },
     ]) {
