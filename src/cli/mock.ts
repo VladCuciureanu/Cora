@@ -164,7 +164,7 @@ export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
   }
 
   // --- Live mode ---
-  const buffer = new BeatBuffer(config.commitIntervalMs, config.eventThresholdPercent);
+  const buffer = new BeatBuffer(config.eventThresholdPercent);
 
   buffer.setListener({
     onBaseline: async (data) => {

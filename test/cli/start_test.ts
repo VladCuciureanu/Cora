@@ -35,7 +35,7 @@ test("start - beat buffer feeds into git engine", async () => {
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.initLocal();
 
-    const buffer = new BeatBuffer(300_000, 20);
+    const buffer = new BeatBuffer(20);
     const commits: string[] = [];
 
     buffer.setListener({
@@ -147,7 +147,7 @@ test("start - event detection triggers immediate commit", async () => {
     await engine.initLocal();
 
     const events: EventData[] = [];
-    const buffer = new BeatBuffer(300_000, 20);
+    const buffer = new BeatBuffer(20);
     buffer.setListener({
       onBaseline: () => {},
       onEvent: async (data: EventData) => {

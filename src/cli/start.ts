@@ -34,7 +34,7 @@ export async function startCommand(): Promise<void> {
     }
   }
 
-  const buffer = new BeatBuffer(config.commitIntervalMs, config.eventThresholdPercent);
+  const buffer = new BeatBuffer(config.eventThresholdPercent);
   buffer.setListener({
     onBaseline: async (data) => {
       try {

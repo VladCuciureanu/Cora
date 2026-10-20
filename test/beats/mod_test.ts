@@ -4,7 +4,7 @@ import { BeatBuffer, detectDeviation, pushRolling, summarizeWindow } from "../..
 import type { BaselineData, EventData } from "../../src/git/mod.ts";
 
 test("BeatBuffer - flushWindow computes correct baseline", async () => {
-  const buffer = new BeatBuffer(300_000, 20);
+  const buffer = new BeatBuffer(20);
   let baseline: BaselineData | null = null;
   buffer.setListener({
     onBaseline: (data) => { baseline = data; },
@@ -27,7 +27,7 @@ test("BeatBuffer - flushWindow computes correct baseline", async () => {
 });
 
 test("BeatBuffer - empty flushWindow is no-op", async () => {
-  const buffer = new BeatBuffer(300_000, 20);
+  const buffer = new BeatBuffer(20);
   let called = false;
   buffer.setListener({
     onBaseline: () => { called = true; },
@@ -38,7 +38,7 @@ test("BeatBuffer - empty flushWindow is no-op", async () => {
 });
 
 test("BeatBuffer - detects spike event", async () => {
-  const buffer = new BeatBuffer(300_000, 20);
+  const buffer = new BeatBuffer(20);
   const events: EventData[] = [];
   buffer.setListener({
     onBaseline: () => {},
@@ -60,7 +60,7 @@ test("BeatBuffer - detects spike event", async () => {
 });
 
 test("BeatBuffer - detects drop event", async () => {
-  const buffer = new BeatBuffer(300_000, 20);
+  const buffer = new BeatBuffer(20);
   const events: EventData[] = [];
   buffer.setListener({
     onBaseline: () => {},
@@ -80,7 +80,7 @@ test("BeatBuffer - detects drop event", async () => {
 });
 
 test("BeatBuffer - detects reconnect after gap", async () => {
-  const buffer = new BeatBuffer(300_000, 20);
+  const buffer = new BeatBuffer(20);
   const events: EventData[] = [];
   buffer.setListener({
     onBaseline: () => {},
@@ -97,7 +97,7 @@ test("BeatBuffer - detects reconnect after gap", async () => {
 });
 
 test("BeatBuffer - baseline is stamped with the last sample's time, not wall-clock time", async () => {
-  const buffer = new BeatBuffer(300_000, 20);
+  const buffer = new BeatBuffer(20);
   let baseline: BaselineData | null = null;
   buffer.setListener({
     onBaseline: (data) => { baseline = data; },

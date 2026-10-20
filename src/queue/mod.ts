@@ -1,11 +1,7 @@
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { queuePath } from "../config/mod.ts";
-import type { BaselineData, EventData } from "../git/mod.ts";
-
-export type QueueEntry =
-  | { type: "baseline"; data: BaselineData }
-  | { type: "event"; data: EventData };
+import type { CommitEntry } from "../git/mod.ts";
 
 export class OfflineQueue {
   private path: string;
@@ -14,12 +10,12 @@ export class OfflineQueue {
     this.path = path ?? queuePath();
   }
 
-  async enqueue(entry: QueueEntry): Promise<void> {
+  async enqueue(entry: CommitEntry): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true });
     await appendFile(this.path, JSON.stringify(entry) + "\n");
   }
 
-  async drain(): Promise<QueueEntry[]> {
+  async drain(): Promise<CommitEntry[]> {
     let text: string;
     try {
       text = await readFile(this.path, "utf8");
@@ -27,7 +23,7 @@ export class OfflineQueue {
       return [];
     }
 
-    const entries: QueueEntry[] = [];
+    const entries: CommitEntry[] = [];
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
       try {
@@ -48,10 +44,10 @@ export class OfflineQueue {
    * order, ahead of anything enqueued meanwhile) so they are retried later.
    */
   async process(
-    handler: (entry: QueueEntry) => Promise<void>,
-  ): Promise<{ processed: number; failed: { entry: QueueEntry; error: unknown }[] }> {
+    handler: (entry: CommitEntry) => Promise<void>,
+  ): Promise<{ processed: number; failed: { entry: CommitEntry; error: unknown }[] }> {
     const entries = await this.drain();
-    const failed: { entry: QueueEntry; error: unknown }[] = [];
+    const failed: { entry: CommitEntry; error: unknown }[] = [];
     let processed = 0;
     for (const entry of entries) {
       try {
@@ -65,7 +61,7 @@ export class OfflineQueue {
     return { processed, failed };
   }
 
-  private async requeueFront(entries: QueueEntry[]): Promise<void> {
+  private async requeueFront(entries: CommitEntry[]): Promise<void> {
     let rest = "";
     try {
       rest = await readFile(this.path, "utf8");

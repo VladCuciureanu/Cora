@@ -7,7 +7,7 @@ const TEST_API_KEY = "testkey123";
 const TEST_PORT = 9876;
 
 async function withServer(fn: (base: string) => Promise<void>) {
-  const buffer = new BeatBuffer(300_000, 20);
+  const buffer = new BeatBuffer(20);
   buffer.setListener({ onBaseline: () => {}, onEvent: () => {} });
   const server = new IngestionServer(buffer, TEST_API_KEY, TEST_PORT);
   server.start();

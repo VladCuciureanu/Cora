@@ -55,13 +55,11 @@ export class BeatBuffer {
   private samples: BeatSample[] = [];
   private rollingBpms: number[] = [];
   private listener: BeatListener | null = null;
-  private windowMs: number;
   private thresholdPercent: number;
   private lastSampleTime = 0;
   private gapThresholdMs = 60_000;
 
-  constructor(windowMs: number, thresholdPercent: number) {
-    this.windowMs = windowMs;
+  constructor(thresholdPercent: number) {
     this.thresholdPercent = thresholdPercent;
   }
 
