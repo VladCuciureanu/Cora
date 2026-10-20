@@ -87,17 +87,17 @@ export class IngestionServer {
   }
 
   private async handle(req: Request): Promise<Response> {
-    if (req.method === "GET" && new URL(req.url).pathname === "/health") {
-      return Response.json({ status: "alive", bpm: this.buffer.currentBpm });
-    }
-
-    if (req.method !== "POST" || new URL(req.url).pathname !== "/beat") {
-      return jsonError(404, "Not found");
-    }
+    const route = `${req.method} ${new URL(req.url).pathname}`;
+    if (route === "GET /health") return Response.json({ status: "alive" });
+    if (route !== "GET /status" && route !== "POST /beat") return jsonError(404, "Not found");
 
     const auth = req.headers.get("Authorization");
     if (auth !== `Bearer ${this.apiKey}`) {
       return jsonError(401, "Unauthorized");
+    }
+
+    if (route === "GET /status") {
+      return Response.json({ status: "alive", bpm: this.buffer.currentBpm });
     }
 
     let body: BeatPayload;

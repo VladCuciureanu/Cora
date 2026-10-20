@@ -126,3 +126,19 @@ test("Server - rejects an out-of-range bpm or unparseable timestamp", async () =
     }
   });
 });
+
+test("Server - health is liveness only; BPM needs the API key", async () => {
+  await withServer(async (base) => {
+    const health = await fetch(`${base}/health`);
+    assert.deepEqual(await health.json(), { status: "alive" });
+
+    const anonymous = await fetch(`${base}/status`);
+    assert.deepEqual(anonymous.status, 401);
+    await anonymous.json();
+
+    const status = await fetch(`${base}/status`, {
+      headers: { Authorization: `Bearer ${TEST_API_KEY}` },
+    });
+    assert.deepEqual(await status.json(), { status: "alive", bpm: null });
+  });
+});
