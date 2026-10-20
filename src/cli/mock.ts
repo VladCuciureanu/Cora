@@ -220,8 +220,8 @@ export function startTicker(
   let lastDay = new Date(simTime).getDate();
   let lastFlush = simTime;
   let stopped = false;
-  // Ticks run one after another so stop() can wait for the last one
-  let pending: Promise<void> = Promise.resolve();
+  // At most one tick runs at a time, so stop() can wait for it
+  let inFlight: Promise<void> | undefined;
 
   const tick = async () => {
     if (stopped) return;
@@ -250,15 +250,22 @@ export function startTicker(
     }
   };
 
+  // A tick that comes due while the last one is still running is skipped,
+  // not queued, so slow commits can't build an ever-growing backlog
   const timer = setInterval(() => {
-    pending = pending.then(tick, tick);
+    if (inFlight) return;
+    inFlight = tick()
+      .catch(() => {})
+      .finally(() => {
+        inFlight = undefined;
+      });
   }, simStepMs / speed);
 
   return {
     async stop() {
       stopped = true;
       clearInterval(timer);
-      await pending.catch(() => {});
+      await inFlight;
     },
   };
 }
