@@ -77,7 +77,7 @@ Colons in the timestamp become `-` in filenames. A spike or drop is a reading at
 
 ### Files and config
 
-Everything lives in `~/.config/cora/` (`$HOME`, else `%USERPROFILE%`): `config.json`, the clone in `repo/`, `queue.jsonl` and `cora.pid`. `cora init` writes `config.json` with owner-only permissions:
+Everything lives in `~/.config/cora/` (`$HOME` on Linux and macOS, `%USERPROFILE%` on Windows): `config.json`, the clone in `repo/`, `queue.jsonl` and `cora.pid`. `cora init` writes `config.json` with owner-only permissions:
 
 | Key                     | Default       | Meaning                                      |
 | ----------------------- | ------------- | -------------------------------------------- |

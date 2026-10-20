@@ -1,4 +1,6 @@
+import { randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 export interface CoraConfig {
@@ -17,8 +19,7 @@ const DEFAULTS: Pick<CoraConfig, "commitIntervalMs" | "eventThresholdPercent" | 
 };
 
 function configDir(): string {
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? ".";
-  return join(home, ".config", "cora");
+  return join(homedir(), ".config", "cora");
 }
 
 export function configPath(): string {
@@ -55,9 +56,5 @@ export async function saveConfig(config: CoraConfig, path = configPath()): Promi
 }
 
 export function generateApiKey(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  return randomBytes(32).toString("hex");
 }
