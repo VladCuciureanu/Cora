@@ -1,4 +1,4 @@
-import type { BaselineData, EventData } from "../git/mod.ts";
+import type { BaselineData, EventData } from "./git.ts";
 
 export interface BeatSample {
   timestamp: string;

@@ -4,7 +4,7 @@ import { rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { OfflineQueue } from "../../src/queue/mod.ts";
+import { OfflineQueue } from "../src/queue.ts";
 
 async function makeTempFile(suffix: string): Promise<string> {
   const file = join(tmpdir(), `cora-${randomUUID()}${suffix}`);

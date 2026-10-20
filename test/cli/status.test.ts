@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type TestContext, test } from "node:test";
 import { statusCommand } from "../../src/cli/status.ts";
-import { saveConfig } from "../../src/config/mod.ts";
+import { saveConfig } from "../../src/config.ts";
 
 /** PID of a process that has already exited. */
 async function deadPid(): Promise<number> {

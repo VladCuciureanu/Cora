@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import type { BeatBuffer, BeatSample } from "../beats/mod.ts";
+import type { BeatBuffer, BeatSample } from "./beats.ts";
 
 /** Adapt a node:http request to a Web-standard Request so the handler stays fetch-style. */
 async function toWebRequest(req: IncomingMessage, hostname: string): Promise<Request> {

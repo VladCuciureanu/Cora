@@ -1,6 +1,6 @@
-import { loadConfig } from "../config/mod.ts";
-import { GitEngine } from "../git/mod.ts";
-import { OfflineQueue } from "../queue/mod.ts";
+import { loadConfig } from "../config.ts";
+import { GitEngine } from "../git.ts";
+import { OfflineQueue } from "../queue.ts";
 
 /**
  * Commit every queued entry in order. Entries that fail to commit stay in the

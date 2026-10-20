@@ -1,9 +1,9 @@
 import { rm, writeFile } from "node:fs/promises";
-import { BeatBuffer, detectDeviation, pushRolling, summarizeWindow } from "../beats/mod.ts";
-import { loadConfig, pidPath } from "../config/mod.ts";
-import { type CommitEntry, GitEngine } from "../git/mod.ts";
+import { BeatBuffer, detectDeviation, pushRolling, summarizeWindow } from "../beats.ts";
+import { loadConfig, pidPath } from "../config.ts";
+import { type CommitEntry, GitEngine } from "../git.ts";
 import { MockHeart } from "../mock/heart.ts";
-import { OfflineQueue } from "../queue/mod.ts";
+import { OfflineQueue } from "../queue.ts";
 
 function parseArgs(args: string[]): {
   speed: number;

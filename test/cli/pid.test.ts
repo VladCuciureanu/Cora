@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { mockCommand } from "../../src/cli/mock.ts";
 import { startCommand } from "../../src/cli/start.ts";
-import { pidPath, saveConfig } from "../../src/config/mod.ts";
+import { pidPath, saveConfig } from "../../src/config.ts";
 
 /** Point the config dir at a fresh temp home whose repo URL cannot be cloned. */
 async function withBrokenHome(fn: () => Promise<void>) {

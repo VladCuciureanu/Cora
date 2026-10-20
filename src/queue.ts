@@ -1,7 +1,7 @@
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { queuePath } from "../config/mod.ts";
-import type { CommitEntry } from "../git/mod.ts";
+import { queuePath } from "./config.ts";
+import type { CommitEntry } from "./git.ts";
 
 export class OfflineQueue {
   private path: string;

@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { loadConfig, pidPath } from "../config/mod.ts";
+import { loadConfig, pidPath } from "../config.ts";
 
 export async function statusCommand({
   configPath,

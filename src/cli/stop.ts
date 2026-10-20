@@ -1,5 +1,5 @@
 import { readFile, rm } from "node:fs/promises";
-import { pidPath } from "../config/mod.ts";
+import { pidPath } from "../config.ts";
 
 export async function stopCommand(pidFile = pidPath()): Promise<void> {
   let pid: number;

@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { type CoraConfig, loadConfig, repoDir } from "../config/mod.ts";
+import { type CoraConfig, loadConfig, repoDir } from "./config.ts";
 
 export interface BaselineData {
   timestamp: string;

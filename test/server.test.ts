@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BeatBuffer } from "../../src/beats/mod.ts";
-import { IngestionServer } from "../../src/server/mod.ts";
+import { BeatBuffer } from "../src/beats.ts";
+import { IngestionServer } from "../src/server.ts";
 
 const TEST_API_KEY = "testkey123";
 const TEST_PORT = 9876;

@@ -10,7 +10,7 @@ import {
   git,
   parseBeatFilename,
   stripUrlCredentials,
-} from "../../src/git/mod.ts";
+} from "../src/git.ts";
 
 function assertIncludes(actual: string, expected: string): void {
   assert.ok(

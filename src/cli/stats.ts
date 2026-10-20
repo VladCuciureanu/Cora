@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { stat } from "node:fs/promises";
-import { repoDir } from "../config/mod.ts";
+import { repoDir } from "../config.ts";
 
 /** Run git and return stdout, ignoring a non-zero exit code (an empty repo yields empty output, not an error). */
 function gitStdout(args: string[], cwd: string): Promise<string> {

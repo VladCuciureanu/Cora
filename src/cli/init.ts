@@ -1,7 +1,7 @@
 import { networkInterfaces } from "node:os";
 import { createInterface, type Interface } from "node:readline";
 import QRCode from "qrcode";
-import { type CoraConfig, generateApiKey, loadConfig, saveConfig } from "../config/mod.ts";
+import { type CoraConfig, generateApiKey, loadConfig, saveConfig } from "../config.ts";
 
 // One shared line reader so piped stdin (several answers arriving at once) isn't dropped between prompts.
 let rl: Interface | null = null;

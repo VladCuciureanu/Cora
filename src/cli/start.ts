@@ -1,9 +1,9 @@
 import { rm, writeFile } from "node:fs/promises";
-import { BeatBuffer, type BeatListener } from "../beats/mod.ts";
-import { loadConfig, pidPath } from "../config/mod.ts";
-import { GitEngine } from "../git/mod.ts";
-import { OfflineQueue } from "../queue/mod.ts";
-import { IngestionServer } from "../server/mod.ts";
+import { BeatBuffer, type BeatListener } from "../beats.ts";
+import { loadConfig, pidPath } from "../config.ts";
+import { GitEngine } from "../git.ts";
+import { OfflineQueue } from "../queue.ts";
+import { IngestionServer } from "../server.ts";
 import { replayQueue } from "./replay.ts";
 
 /** Commit baselines and events as they arrive; anything that fails to commit is queued for replay. */

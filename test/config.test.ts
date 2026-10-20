@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { type CoraConfig, generateApiKey, loadConfig, saveConfig } from "../../src/config/mod.ts";
+import { type CoraConfig, generateApiKey, loadConfig, saveConfig } from "../src/config.ts";
 
 test("generateApiKey - returns 64-char hex string", () => {
   const key = generateApiKey();
