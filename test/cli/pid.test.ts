@@ -41,10 +41,7 @@ test("start - no PID file is left behind when git setup fails", async () => {
 
 test("mock - no PID file is left behind when git setup fails", async () => {
   await withBrokenHome(async () => {
-    await assert.rejects(
-      mockCommand(["mock", "--from", "2026-01-01", "--to", "2026-01-02"]),
-      /git clone failed/,
-    );
+    await assert.rejects(mockCommand({ from: "2026-01-01", to: "2026-01-02" }), /git clone failed/);
     await assert.rejects(stat(pidPath()), { code: "ENOENT" });
   });
 });

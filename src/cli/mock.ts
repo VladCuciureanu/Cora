@@ -8,38 +8,37 @@ import { OfflineQueue } from "../queue.ts";
 /** Fastest live simulation speed. */
 const MAX_LIVE_SPEED = 100;
 
-function parseArgs(args: string[]): {
+/** `cora mock` options as given on the command line. */
+export interface MockOptions {
+  speed?: string;
+  from?: string;
+  to?: string;
+}
+
+function parseDate(flag: string, value: string | undefined): Date | null {
+  if (value === undefined) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error(`Invalid ${flag} date: ${value}`);
+  return date;
+}
+
+function parseOptions(options: MockOptions): {
   speed: number;
   startDate: Date | null;
   endDate: Date | null;
 } {
-  let speed = 1;
-  let startDate: Date | null = null;
-  let endDate: Date | null = null;
-
-  for (let i = 1; i < args.length; i++) {
-    if (args[i] === "--from" && args[i + 1]) {
-      startDate = new Date(args[++i]);
-      if (Number.isNaN(startDate.getTime())) {
-        throw new Error(`Invalid --from date: ${args[i]}`);
-      }
-    } else if (args[i] === "--to" && args[i + 1]) {
-      endDate = new Date(args[++i]);
-      if (Number.isNaN(endDate.getTime())) {
-        throw new Error(`Invalid --to date: ${args[i]}`);
-      }
-    } else if (args[i] === "--speed" && args[i + 1]) {
-      speed = parseFloat(args[++i]);
-    } else if (!args[i].startsWith("--")) {
-      speed = parseFloat(args[i]);
-    }
-  }
-
-  if (Number.isNaN(speed) || speed <= 0) {
+  const speed = options.speed === undefined ? 1 : Number(options.speed);
+  if (!Number.isFinite(speed) || speed <= 0) {
     throw new Error("Speed must be a positive number (e.g. 60 = 1 hour/min)");
   }
-
-  return { speed, startDate, endDate };
+  if (options.to !== undefined && options.from === undefined) {
+    throw new Error("--to needs --from");
+  }
+  return {
+    speed,
+    startDate: parseDate("--from", options.from),
+    endDate: parseDate("--to", options.to),
+  };
 }
 
 /** Generate all commit entries for a date range without touching git. */
@@ -99,10 +98,10 @@ export function generateEntries(
   return entries;
 }
 
-export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
+export async function mockCommand(options: MockOptions = {}): Promise<void> {
+  let { speed, startDate, endDate } = parseOptions(options);
   const config = await requireConfig();
 
-  let { speed, startDate, endDate } = parseArgs(argv);
   const backfillMode = startDate !== null;
   const backfillEnd = endDate ?? new Date();
 

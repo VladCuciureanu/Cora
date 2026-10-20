@@ -35,12 +35,12 @@ npm start -- --help   # or run from source without linking
 cora init     # prompt for PAT, repo URL and port (asked again until it is 1-65535); generate an API key; print a setup QR code
 cora start    # clone the repo, replay queued beats, start the server
 cora stop     # SIGTERM the running instance; it flushes and pushes before exiting (exits 1 if it is not running)
-cora status   # whether it is running, its port, and the latest BPM
+cora status   # whether it is running, its PID and port, and the latest BPM
 cora stats    # total commits, first/last beat, current daily streak, average BPM
 cora replay   # commit beats queued while commits were failing
 ```
 
-`cora --help` (`-h`) prints usage and `cora --version` (`-v`) prints the version. Missing config, an unknown command or any other failure (for example a repo that cannot be cloned) exits with status 1 and a one-line `cora: ...` error on stderr.
+`cora --help` (`-h`) prints usage, `cora <command> --help` prints that command's usage and options, and `cora --version` (`-v`) prints the version. Missing config, an unknown command, an unknown option, a missing option value, an extra argument or any other failure (for example a repo that cannot be cloned) exits with status 1 and a one-line `cora: ...` error on stderr.
 
 ### Mock heart
 
@@ -50,7 +50,7 @@ cora mock 60                                  # one simulated hour per minute (s
 cora mock --from 2025-01-01 --to 2025-06-01   # backfill a date range via git fast-import
 ```
 
-Live speed is capped at 100x (one 5 s sample every 50 ms of real time); a larger value is reduced to 100x with a note. `--to` only applies with `--from` and defaults to now. A backfill resumes after the newest beat already in the repo, and live mode first fills the gap since that beat if it is older than `commitIntervalMs`. `--speed` has no effect on a backfill.
+Live speed is capped at 100x (one 5 s sample every 50 ms of real time); a larger value is reduced to 100x with a note. `--to` requires `--from` and defaults to now. A backfill resumes after the newest beat already in the repo, and live mode first fills the gap since that beat if it is older than `commitIntervalMs`. `--speed` has no effect on a backfill.
 
 ### Sending beats
 
