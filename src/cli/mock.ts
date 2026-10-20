@@ -4,6 +4,7 @@ import { type CoraConfig, pidPath, requireConfig } from "../config.ts";
 import { type CommitEntry, GitEngine } from "../git.ts";
 import { MockHeart } from "../mock/heart.ts";
 import { OfflineQueue } from "../queue.ts";
+import { onShutdownSignal } from "./signals.ts";
 import { commitListener } from "./start.ts";
 
 /** Fastest live simulation speed. */
@@ -296,10 +297,7 @@ async function runLive(
 
   const ticker = startTicker(heart, buffer, speed, config.commitIntervalMs);
 
-  let stopping = false;
-  const shutdown = async () => {
-    if (stopping) return;
-    stopping = true;
+  onShutdownSignal(async () => {
     console.log("\n♥ Stopping mock heart...");
     // Wait for an in-flight tick so nothing is committed after the final flush
     await ticker.stop();
@@ -307,10 +305,7 @@ async function runLive(
     await gitEngine.shutdown();
     await removePidFile();
     console.log("♥ Goodbye.");
-  };
-
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  });
 }
 
 export async function mockCommand(options: MockOptions = {}): Promise<void> {
