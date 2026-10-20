@@ -12,9 +12,6 @@ export async function startCommand(): Promise<void> {
     process.exit(1);
   }
 
-  // Write PID file
-  await writeFile(pidPath(), String(process.pid));
-
   const gitEngine = new GitEngine();
   await gitEngine.init();
   console.log("✓ Git repo ready");
@@ -62,6 +59,9 @@ export async function startCommand(): Promise<void> {
 
   const server = new IngestionServer(buffer, config.apiKey, config.port);
   server.start();
+
+  // Only advertise the PID once setup has succeeded
+  await writeFile(pidPath(), String(process.pid));
 
   console.log(`♥ Cora is alive (PID ${process.pid})`);
   console.log(`  Baseline every ${config.commitIntervalMs / 1000}s | Event threshold ±${config.eventThresholdPercent}%`);

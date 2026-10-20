@@ -95,18 +95,16 @@ export function generateEntries(
   return entries;
 }
 
-export async function mockCommand(): Promise<void> {
+export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
   const config = await loadConfig();
   if (!config) {
     console.error("No config found. Run `cora init` first.");
     process.exit(1);
   }
 
-  let { speed, startDate, endDate } = parseArgs(process.argv.slice(2));
+  let { speed, startDate, endDate } = parseArgs(argv);
   const backfillMode = startDate !== null;
   const backfillEnd = endDate ?? new Date();
-
-  await writeFile(pidPath(), String(process.pid));
 
   const gitEngine = new GitEngine();
   await gitEngine.init();
@@ -131,34 +129,37 @@ export async function mockCommand(): Promise<void> {
   if (backfillMode) {
     if (startDate!.getTime() >= backfillEnd.getTime()) {
       console.log("Nothing to backfill — already up to date.");
-      try { await rm(pidPath()); } catch { /* ignore */ }
       return;
     }
 
-    const days = Math.ceil((backfillEnd.getTime() - startDate!.getTime()) / 86_400_000);
-    console.log(`♥ Generating ${days} days of heartbeat data...`);
+    await writeFile(pidPath(), String(process.pid));
+    try {
+      const days = Math.ceil((backfillEnd.getTime() - startDate!.getTime()) / 86_400_000);
+      console.log(`♥ Generating ${days} days of heartbeat data...`);
 
-    const entries = generateEntries(
-      heart,
-      startDate!.getTime(),
-      backfillEnd.getTime(),
-      config.commitIntervalMs,
-      config.eventThresholdPercent,
-    );
+      const entries = generateEntries(
+        heart,
+        startDate!.getTime(),
+        backfillEnd.getTime(),
+        config.commitIntervalMs,
+        config.eventThresholdPercent,
+      );
 
-    console.log(`✓ Generated ${entries.length} commits. Fast-importing into git...`);
+      console.log(`✓ Generated ${entries.length} commits. Fast-importing into git...`);
 
-    await gitEngine.fastImport(entries, (done, total) => {
-      const pct = Math.round((done / total) * 100);
-      process.stdout.write(`\r  Importing: ${done}/${total} (${pct}%)`);
-    });
+      await gitEngine.fastImport(entries, (done, total) => {
+        const pct = Math.round((done / total) * 100);
+        process.stdout.write(`\r  Importing: ${done}/${total} (${pct}%)`);
+      });
 
-    console.log("\n✓ Fast-import complete. Pushing...");
+      console.log("\n✓ Fast-import complete. Pushing...");
 
-    await gitEngine.shutdown();
-    try { await rm(pidPath()); } catch { /* ignore */ }
+      await gitEngine.shutdown();
 
-    console.log(`✓ Backfill complete: ${entries.length} commits across ${days} day(s)`);
+      console.log(`✓ Backfill complete: ${entries.length} commits across ${days} day(s)`);
+    } finally {
+      try { await rm(pidPath()); } catch { /* ignore */ }
+    }
     return;
   }
 
@@ -205,6 +206,9 @@ export async function mockCommand(): Promise<void> {
       console.log(`✓ Gap filled: ${gapEntries.length} commits\n`);
     }
   }
+
+  // Only advertise the PID once setup has succeeded
+  await writeFile(pidPath(), String(process.pid));
 
   console.log(`♥ Mock heart started (speed: ${speed}x)`);
   console.log(`  1 real second = ${speed} simulated seconds`);
