@@ -1,12 +1,22 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat as fsStat, writeFile } from "node:fs/promises";
+import { stat as fsStat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { GitEngine, authEnv, beatFilename, git, parseBeatFilename, stripUrlCredentials } from "../../src/git/mod.ts";
+import {
+  authEnv,
+  beatFilename,
+  GitEngine,
+  git,
+  parseBeatFilename,
+  stripUrlCredentials,
+} from "../../src/git/mod.ts";
 
 function assertIncludes(actual: string, expected: string): void {
-  assert.ok(actual.includes(expected), `Expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`);
+  assert.ok(
+    actual.includes(expected),
+    `Expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`,
+  );
 }
 
 async function withTempRepo(fn: (dir: string) => Promise<void>) {
@@ -155,15 +165,22 @@ test("GitEngine - getLatestBeatTimestamp returns latest", async () => {
 
     await engine.commitBaseline({
       timestamp: "2026-01-01T10:00:00.000Z",
-      avgBpm: 70, minBpm: 65, maxBpm: 75, beatCount: 10,
+      avgBpm: 70,
+      minBpm: 65,
+      maxBpm: 75,
+      beatCount: 10,
     });
     await engine.commitBaseline({
       timestamp: "2026-03-15T14:30:00.000Z",
-      avgBpm: 72, minBpm: 66, maxBpm: 78, beatCount: 12,
+      avgBpm: 72,
+      minBpm: 66,
+      maxBpm: 78,
+      beatCount: 12,
     });
     await engine.commitEvent({
       timestamp: "2026-02-10T08:00:00.000Z",
-      bpm: 130, kind: "spike",
+      bpm: 130,
+      kind: "spike",
     });
 
     const latest = await engine.getLatestBeatTimestamp();
@@ -244,9 +261,21 @@ test("GitEngine - concurrent git operations run one at a time", async () => {
     await engine.initLocal();
 
     await Promise.all([
-      engine.commitBaseline({ timestamp: "2026-03-24T12:00:00.000Z", avgBpm: 70, minBpm: 65, maxBpm: 75, beatCount: 10 }),
+      engine.commitBaseline({
+        timestamp: "2026-03-24T12:00:00.000Z",
+        avgBpm: 70,
+        minBpm: 65,
+        maxBpm: 75,
+        beatCount: 10,
+      }),
       engine.commitEvent({ timestamp: "2026-03-24T12:01:00.000Z", bpm: 120, kind: "spike" }),
-      other.commitBaseline({ timestamp: "2026-03-24T12:02:00.000Z", avgBpm: 72, minBpm: 66, maxBpm: 78, beatCount: 12 }),
+      other.commitBaseline({
+        timestamp: "2026-03-24T12:02:00.000Z",
+        avgBpm: 72,
+        minBpm: 66,
+        maxBpm: 78,
+        beatCount: 12,
+      }),
       engine.flush(),
       engine.commitEvent({ timestamp: "2026-03-24T12:03:00.000Z", bpm: 40, kind: "drop" }),
       engine.flush(),
@@ -255,7 +284,18 @@ test("GitEngine - concurrent git operations run one at a time", async () => {
     assert.deepEqual(maxActive, 1);
     // Each operation's add+commit pair stays together; the first flush runs
     // after two commits, the second after the last commit.
-    assert.deepEqual(calls, ["add", "commit", "add", "commit", "add", "commit", "push", "add", "commit", "push"]);
+    assert.deepEqual(calls, [
+      "add",
+      "commit",
+      "add",
+      "commit",
+      "add",
+      "commit",
+      "push",
+      "add",
+      "commit",
+      "push",
+    ]);
 
     await engine.shutdown();
     await other.shutdown();
@@ -282,7 +322,10 @@ test("GitEngine - a failing git operation does not block later ones", async () =
       engine.commitEvent({ timestamp: "2026-03-24T12:00:00.000Z", bpm: 120, kind: "spike" }),
       engine.commitEvent({ timestamp: "2026-03-24T12:01:00.000Z", bpm: 121, kind: "spike" }),
     ]);
-    assert.deepEqual(results.map((r) => r.status), ["rejected", "fulfilled"]);
+    assert.deepEqual(
+      results.map((r) => r.status),
+      ["rejected", "fulfilled"],
+    );
 
     await engine.shutdown();
   } finally {
@@ -303,7 +346,11 @@ test("GitEngine - clone/push send the PAT as a header, never in the URL", async 
   const tmp = await mkdtemp(join(tmpdir(), "cora-auth-test-"));
   try {
     const calls: { args: string[]; env?: Record<string, string> }[] = [];
-    const runGit = async (args: string[], _cwd: string, env?: Record<string, string>): Promise<string> => {
+    const runGit = async (
+      args: string[],
+      _cwd: string,
+      env?: Record<string, string>,
+    ): Promise<string> => {
       calls.push({ args, env });
       return "";
     };
@@ -319,7 +366,10 @@ test("GitEngine - clone/push send the PAT as a header, never in the URL", async 
       assert.deepEqual(call.env, authEnv(AUTH_CONFIG.repoUrl, AUTH_CONFIG.githubPat));
     }
     for (const call of calls) {
-      assert.ok(!call.args.join(" ").includes(AUTH_CONFIG.githubPat), `token leaked into: git ${call.args.join(" ")}`);
+      assert.ok(
+        !call.args.join(" ").includes(AUTH_CONFIG.githubPat),
+        `token leaked into: git ${call.args.join(" ")}`,
+      );
     }
 
     await engine.shutdown();
@@ -330,7 +380,10 @@ test("GitEngine - clone/push send the PAT as a header, never in the URL", async 
 
 test("GitEngine - init strips a PAT embedded in an existing clone's remote URL", async () => {
   await withTempRepo(async (dir) => {
-    await git(["remote", "add", "origin", "https://ghp_secret123@github.com/user/cora-heartbeat.git"], dir);
+    await git(
+      ["remote", "add", "origin", "https://ghp_secret123@github.com/user/cora-heartbeat.git"],
+      dir,
+    );
 
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.init(AUTH_CONFIG);
@@ -351,15 +404,23 @@ test("authEnv - git sees the Authorization header for the repo's host only", asy
       await git(["config", "--get-urlmatch", "http.extraHeader", AUTH_CONFIG.repoUrl], dir, env),
       expected,
     );
-    await assert.rejects(git(["config", "--get-urlmatch", "http.extraHeader", "https://example.com/x.git"], dir, env));
+    await assert.rejects(
+      git(["config", "--get-urlmatch", "http.extraHeader", "https://example.com/x.git"], dir, env),
+    );
     // Local paths and non-http remotes get no header
     assert.deepEqual(authEnv("/tmp/some/repo", "ghp_x"), {});
   });
 });
 
 test("stripUrlCredentials - removes user info from http(s) URLs only", () => {
-  assert.deepEqual(stripUrlCredentials("https://ghp_x@github.com/u/r.git"), "https://github.com/u/r.git");
-  assert.deepEqual(stripUrlCredentials("https://user:ghp_x@github.com/u/r"), "https://github.com/u/r");
+  assert.deepEqual(
+    stripUrlCredentials("https://ghp_x@github.com/u/r.git"),
+    "https://github.com/u/r.git",
+  );
+  assert.deepEqual(
+    stripUrlCredentials("https://user:ghp_x@github.com/u/r"),
+    "https://github.com/u/r",
+  );
   assert.deepEqual(stripUrlCredentials("https://github.com/u/r.git"), "https://github.com/u/r.git");
   assert.deepEqual(stripUrlCredentials("git@github.com:u/r.git"), "git@github.com:u/r.git");
 });
@@ -374,11 +435,32 @@ test("GitEngine - fastImport appends commits on top of existing history", async 
     await engine.initLocal();
 
     const progress: [number, number][] = [];
-    await engine.fastImport([
-      { type: "baseline", data: { timestamp: "2025-01-01T00:05:00.000Z", avgBpm: 60, minBpm: 55, maxBpm: 66, beatCount: 60 } },
-      { type: "event", data: { timestamp: "2025-01-01T00:07:30.000Z", bpm: 130, kind: "spike" } },
-      { type: "baseline", data: { timestamp: "2025-01-01T00:10:00.000Z", avgBpm: 75, minBpm: 62, maxBpm: 130, beatCount: 60 } },
-    ], (done, total) => progress.push([done, total]));
+    await engine.fastImport(
+      [
+        {
+          type: "baseline",
+          data: {
+            timestamp: "2025-01-01T00:05:00.000Z",
+            avgBpm: 60,
+            minBpm: 55,
+            maxBpm: 66,
+            beatCount: 60,
+          },
+        },
+        { type: "event", data: { timestamp: "2025-01-01T00:07:30.000Z", bpm: 130, kind: "spike" } },
+        {
+          type: "baseline",
+          data: {
+            timestamp: "2025-01-01T00:10:00.000Z",
+            avgBpm: 75,
+            minBpm: 62,
+            maxBpm: 130,
+            beatCount: 60,
+          },
+        },
+      ],
+      (done, total) => progress.push([done, total]),
+    );
 
     const epoch = (iso: string) => String(Date.parse(iso) / 1000);
     assert.deepEqual((await git(["log", "-3", "--format=%s|%at|%ct|%an <%ae>"], dir)).split("\n"), [
@@ -397,12 +479,18 @@ test("GitEngine - fastImport appends commits on top of existing history", async 
       "beats/2025-01-01T00-10-00.000Z.beat",
     ]);
     assert.deepEqual(await readFile(join(dir, "README.md"), "utf8"), "hello\n");
-    assert.deepEqual(JSON.parse(await readFile(join(dir, "beats", "2025-01-01T00-07-30.000Z.spike.beat"), "utf8")), {
-      bpm: 130,
-      kind: "spike",
-    });
+    assert.deepEqual(
+      JSON.parse(await readFile(join(dir, "beats", "2025-01-01T00-07-30.000Z.spike.beat"), "utf8")),
+      {
+        bpm: 130,
+        kind: "spike",
+      },
+    );
     assert.deepEqual(await git(["status", "--porcelain"], dir), "");
-    assert.deepEqual((await engine.getLatestBeatTimestamp())!.toISOString(), "2025-01-01T00:10:00.000Z");
+    assert.deepEqual(
+      (await engine.getLatestBeatTimestamp())!.toISOString(),
+      "2025-01-01T00:10:00.000Z",
+    );
     assert.deepEqual(progress, [[3, 3]]);
 
     await engine.shutdown();
@@ -415,7 +503,9 @@ test("GitEngine - fastImport with no entries is a no-op", async () => {
     await engine.initLocal();
 
     let called = false;
-    await engine.fastImport([], () => { called = true; });
+    await engine.fastImport([], () => {
+      called = true;
+    });
 
     assert.deepEqual(await git(["rev-list", "--count", "HEAD"], dir), "1");
     assert.deepEqual(called, false);
@@ -435,9 +525,17 @@ async function assertBothBeatFilesKept(dir: string) {
     assert.ok(!file.includes(":"), `${file} should not contain ':'`);
     assert.deepEqual(parseBeatFilename(file.slice("beats/".length))!.toISOString(), SAME_TS);
   }
-  const contents = await Promise.all(files.map(async (f) => JSON.parse(await readFile(join(dir, f), "utf8"))));
-  assert.ok(contents.some((c) => c.kind === "spike" && c.bpm === 150), "event file was overwritten");
-  assert.ok(contents.some((c) => c.avg_bpm === 80), "baseline file missing");
+  const contents = await Promise.all(
+    files.map(async (f) => JSON.parse(await readFile(join(dir, f), "utf8"))),
+  );
+  assert.ok(
+    contents.some((c) => c.kind === "spike" && c.bpm === 150),
+    "event file was overwritten",
+  );
+  assert.ok(
+    contents.some((c) => c.avg_bpm === 80),
+    "baseline file missing",
+  );
 }
 
 test("GitEngine - event and baseline at the same timestamp both keep their file", async () => {
@@ -478,14 +576,34 @@ test("GitEngine - fastImport into a repo with no commits starts the unborn branc
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.initLocal();
     await engine.fastImport([
-      { type: "baseline", data: { timestamp: "2025-01-01T00:05:00.000Z", avgBpm: 60, minBpm: 55, maxBpm: 66, beatCount: 60 } },
-      { type: "baseline", data: { timestamp: "2025-01-01T00:10:00.000Z", avgBpm: 62, minBpm: 56, maxBpm: 70, beatCount: 60 } },
+      {
+        type: "baseline",
+        data: {
+          timestamp: "2025-01-01T00:05:00.000Z",
+          avgBpm: 60,
+          minBpm: 55,
+          maxBpm: 66,
+          beatCount: 60,
+        },
+      },
+      {
+        type: "baseline",
+        data: {
+          timestamp: "2025-01-01T00:10:00.000Z",
+          avgBpm: 62,
+          minBpm: 56,
+          maxBpm: 70,
+          beatCount: 60,
+        },
+      },
     ]);
 
     assert.deepEqual(await git(["symbolic-ref", "--short", "HEAD"], dir), "trunk");
     assert.deepEqual(await git(["rev-list", "--count", "HEAD"], dir), "2");
-    assert.deepEqual(await git(["rev-list", "--max-parents=0", "HEAD", "--format=%s", "--no-commit-header"], dir),
-      "♥ 60bpm @ 2025-01-01T00:05:00.000Z");
+    assert.deepEqual(
+      await git(["rev-list", "--max-parents=0", "HEAD", "--format=%s", "--no-commit-header"], dir),
+      "♥ 60bpm @ 2025-01-01T00:05:00.000Z",
+    );
     assert.deepEqual((await git(["ls-files"], dir)).split("\n"), [
       "beats/2025-01-01T00-05-00.000Z.beat",
       "beats/2025-01-01T00-10-00.000Z.beat",

@@ -1,11 +1,15 @@
 import { rm, writeFile } from "node:fs/promises";
-import { loadConfig, pidPath } from "../config/mod.ts";
-import { GitEngine, type CommitEntry } from "../git/mod.ts";
 import { BeatBuffer, detectDeviation, pushRolling, summarizeWindow } from "../beats/mod.ts";
-import { OfflineQueue } from "../queue/mod.ts";
+import { loadConfig, pidPath } from "../config/mod.ts";
+import { type CommitEntry, GitEngine } from "../git/mod.ts";
 import { MockHeart } from "../mock/heart.ts";
+import { OfflineQueue } from "../queue/mod.ts";
 
-function parseArgs(args: string[]): { speed: number; startDate: Date | null; endDate: Date | null } {
+function parseArgs(args: string[]): {
+  speed: number;
+  startDate: Date | null;
+  endDate: Date | null;
+} {
   let speed = 1;
   let startDate: Date | null = null;
   let endDate: Date | null = null;
@@ -158,7 +162,11 @@ export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
 
       console.log(`✓ Backfill complete: ${entries.length} commits across ${days} day(s)`);
     } finally {
-      try { await rm(pidPath()); } catch { /* ignore */ }
+      try {
+        await rm(pidPath());
+      } catch {
+        /* ignore */
+      }
     }
     return;
   }
@@ -170,7 +178,9 @@ export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
     onBaseline: async (data) => {
       try {
         await gitEngine.commitBaseline(data);
-        console.log(`  ♥ baseline ${data.avgBpm}bpm (${data.minBpm}–${data.maxBpm}) x${data.beatCount}`);
+        console.log(
+          `  ♥ baseline ${data.avgBpm}bpm (${data.minBpm}–${data.maxBpm}) x${data.beatCount}`,
+        );
       } catch (e) {
         console.error(`Baseline commit failed, queuing: ${e}`);
         await queue.enqueue({ type: "baseline", data });
@@ -218,7 +228,9 @@ export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
   for (const act of heart.getActivityPlan()) {
     const h = Math.floor(act.startMinute / 60);
     const m = act.startMinute % 60;
-    console.log(`    ${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} — peak ${act.peakBpm}bpm for ${act.durationMin}min`);
+    console.log(
+      `    ${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} — peak ${act.peakBpm}bpm for ${act.durationMin}min`,
+    );
   }
   console.log();
 
@@ -237,7 +249,9 @@ export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
     if (currentDay !== lastDay) {
       heart.replanDay();
       lastDay = currentDay;
-      console.log(`\n— New day: ${simDate.toISOString().slice(0, 10)} — ${heart.getActivityPlan().length} activities planned\n`);
+      console.log(
+        `\n— New day: ${simDate.toISOString().slice(0, 10)} — ${heart.getActivityPlan().length} activities planned\n`,
+      );
     }
 
     const bpm = heart.bpmAt(simDate);
@@ -258,7 +272,11 @@ export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
     clearInterval(ticker);
     await buffer.flushWindow();
     await gitEngine.shutdown();
-    try { await rm(pidPath()); } catch { /* ignore */ }
+    try {
+      await rm(pidPath());
+    } catch {
+      /* ignore */
+    }
     console.log("♥ Goodbye.");
     process.exit(0);
   };

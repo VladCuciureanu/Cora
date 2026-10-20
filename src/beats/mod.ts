@@ -27,7 +27,7 @@ export function detectDeviation(
 ): "spike" | "drop" | null {
   if (rollingBpms.length < MIN_ROLLING_SAMPLES) return null;
   const avg = rollingBpms.reduce((a, b) => a + b, 0) / rollingBpms.length;
-  const deviation = Math.abs(bpm - avg) / avg * 100;
+  const deviation = (Math.abs(bpm - avg) / avg) * 100;
   if (deviation >= thresholdPercent) return bpm > avg ? "spike" : "drop";
   return null;
 }
@@ -39,7 +39,9 @@ export function pushRolling(rollingBpms: number[], bpm: number): void {
 }
 
 /** Aggregate a window of samples into a baseline stamped with the last sample's time. */
-export function summarizeWindow(samples: readonly { timestamp: string; bpm: number }[]): BaselineData | null {
+export function summarizeWindow(
+  samples: readonly { timestamp: string; bpm: number }[],
+): BaselineData | null {
   if (samples.length === 0) return null;
   const bpms = samples.map((s) => s.bpm);
   return {

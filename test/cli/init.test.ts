@@ -4,7 +4,10 @@ import { test } from "node:test";
 import QRCode from "qrcode";
 
 function assertIncludes(actual: string, expected: string): void {
-  assert.ok(actual.includes(expected), `Expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`);
+  assert.ok(
+    actual.includes(expected),
+    `Expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`,
+  );
 }
 
 test("init - QR code encodes JSON payload with endpoint and key", async () => {

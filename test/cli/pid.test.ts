@@ -3,9 +3,9 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { pidPath, saveConfig } from "../../src/config/mod.ts";
-import { startCommand } from "../../src/cli/start.ts";
 import { mockCommand } from "../../src/cli/mock.ts";
+import { startCommand } from "../../src/cli/start.ts";
+import { pidPath, saveConfig } from "../../src/config/mod.ts";
 
 /** Point the config dir at a fresh temp home whose repo URL cannot be cloned. */
 async function withBrokenHome(fn: () => Promise<void>) {
@@ -41,7 +41,10 @@ test("start - no PID file is left behind when git setup fails", async () => {
 
 test("mock - no PID file is left behind when git setup fails", async () => {
   await withBrokenHome(async () => {
-    await assert.rejects(mockCommand(["mock", "--from", "2026-01-01", "--to", "2026-01-02"]), /git clone failed/);
+    await assert.rejects(
+      mockCommand(["mock", "--from", "2026-01-01", "--to", "2026-01-02"]),
+      /git clone failed/,
+    );
     await assert.rejects(stat(pidPath()), { code: "ENOENT" });
   });
 });

@@ -18,6 +18,10 @@ export async function stopCommand(pidFile = pidPath()): Promise<void> {
     await rm(pidFile);
   } catch {
     console.error(`Failed to stop Cora (PID ${pid}). Process may have already exited.`);
-    try { await rm(pidFile); } catch { /* ignore */ }
+    try {
+      await rm(pidFile);
+    } catch {
+      /* ignore */
+    }
   }
 }

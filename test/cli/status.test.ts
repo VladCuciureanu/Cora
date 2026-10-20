@@ -6,9 +6,9 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test, type TestContext } from "node:test";
-import { saveConfig } from "../../src/config/mod.ts";
+import { type TestContext, test } from "node:test";
 import { statusCommand } from "../../src/cli/status.ts";
+import { saveConfig } from "../../src/config/mod.ts";
 
 /** PID of a process that has already exited. */
 async function deadPid(): Promise<number> {
@@ -33,14 +33,17 @@ async function runStatus(t: TestContext, opts: { pid?: number; port?: number }):
   try {
     const configPath = join(dir, "config.json");
     const pidFile = join(dir, "cora.pid");
-    await saveConfig({
-      githubPat: "ghp_test",
-      repoUrl: "https://github.com/test/repo",
-      apiKey: "key",
-      commitIntervalMs: 300_000,
-      eventThresholdPercent: 20,
-      port: opts.port ?? 7331,
-    }, configPath);
+    await saveConfig(
+      {
+        githubPat: "ghp_test",
+        repoUrl: "https://github.com/test/repo",
+        apiKey: "key",
+        commitIntervalMs: 300_000,
+        eventThresholdPercent: 20,
+        port: opts.port ?? 7331,
+      },
+      configPath,
+    );
     if (opts.pid !== undefined) await writeFile(pidFile, String(opts.pid));
 
     const log = t.mock.method(console, "log", () => {});

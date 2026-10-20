@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { repoDir, loadConfig, type CoraConfig } from "../config/mod.ts";
+import { type CoraConfig, loadConfig, repoDir } from "../config/mod.ts";
 
 export interface BaselineData {
   timestamp: string;
@@ -25,7 +25,12 @@ export type CommitEntry =
 
 const execFileAsync = promisify(execFile);
 
-const EVENT_KINDS = ["spike", "drop", "reconnect", "custom"] as const satisfies readonly EventData["kind"][];
+const EVENT_KINDS = [
+  "spike",
+  "drop",
+  "reconnect",
+  "custom",
+] as const satisfies readonly EventData["kind"][];
 
 /**
  * Filename for a beat at the given timestamp. ':' is not allowed in Windows
@@ -46,7 +51,8 @@ export function parseBeatFilename(name: string): Date | null {
   let ts = name.slice(0, -".beat".length);
   const kind = EVENT_KINDS.find((k) => ts.endsWith(`.${k}`));
   if (kind) ts = ts.slice(0, -(kind.length + 1));
-  const m = /^(\d{4}-\d{2}-\d{2}T\d{2})-(\d{2})(?:-(\d{2}(?:\.\d+)?))?(Z|[+-]\d{2}(?:-?\d{2})?)?$/.exec(ts);
+  const m =
+    /^(\d{4}-\d{2}-\d{2}T\d{2})-(\d{2})(?:-(\d{2}(?:\.\d+)?))?(Z|[+-]\d{2}(?:-?\d{2})?)?$/.exec(ts);
   if (m) {
     const [, dateHour, minute, second, zone = ""] = m;
     ts = `${dateHour}:${minute}${second ? `:${second}` : ""}${zone.replace(/^([+-]\d{2})-(\d{2})$/, "$1:$2")}`;
@@ -55,7 +61,11 @@ export function parseBeatFilename(name: string): Date | null {
   return isNaN(date.getTime()) ? null : date;
 }
 
-export async function git(args: string[], cwd: string, env?: Record<string, string>): Promise<string> {
+export async function git(
+  args: string[],
+  cwd: string,
+  env?: Record<string, string>,
+): Promise<string> {
   try {
     const { stdout } = await execFileAsync("git", args, {
       cwd,
@@ -105,7 +115,8 @@ export function stripUrlCredentials(remote: string): string {
   } catch {
     return remote;
   }
-  if ((url.protocol !== "https:" && url.protocol !== "http:") || (!url.username && !url.password)) return remote;
+  if ((url.protocol !== "https:" && url.protocol !== "http:") || (!url.username && !url.password))
+    return remote;
   url.username = "";
   url.password = "";
   return url.toString();
@@ -122,7 +133,10 @@ function withRepoLock<T>(dir: string, fn: () => Promise<T>): Promise<T> {
   const key = resolve(dir);
   const prev = repoLocks.get(key) ?? Promise.resolve();
   const run = prev.then(fn, fn);
-  const tail = run.then(() => {}, () => {});
+  const tail = run.then(
+    () => {},
+    () => {},
+  );
   repoLocks.set(key, tail);
   tail.then(() => {
     if (repoLocks.get(key) === tail) repoLocks.delete(key);
@@ -151,7 +165,7 @@ export class GitEngine {
   }
 
   async init(config?: CoraConfig): Promise<void> {
-    const cfg = config ?? await loadConfig();
+    const cfg = config ?? (await loadConfig());
     if (!cfg) throw new Error("Config not found. Run `cora init` first.");
     this.auth = authEnv(cfg.repoUrl, cfg.githubPat);
 
@@ -199,23 +213,24 @@ export class GitEngine {
 
   private async commitBaselineUnlocked(data: BaselineData): Promise<void> {
     const filename = beatFilename(data.timestamp);
-    const content = JSON.stringify({
-      avg_bpm: data.avgBpm,
-      min_bpm: data.minBpm,
-      max_bpm: data.maxBpm,
-      beat_count: data.beatCount,
-    }, null, 2) + "\n";
+    const content =
+      JSON.stringify(
+        {
+          avg_bpm: data.avgBpm,
+          min_bpm: data.minBpm,
+          max_bpm: data.maxBpm,
+          beat_count: data.beatCount,
+        },
+        null,
+        2,
+      ) + "\n";
 
     await writeFile(join(this.dir, "beats", filename), content);
     await this.git(["add", join("beats", filename)], this.dir);
-    await this.git(
-      ["commit", "-m", `♥ ${data.avgBpm}bpm @ ${data.timestamp}`],
-      this.dir,
-      {
-        GIT_AUTHOR_DATE: data.timestamp,
-        GIT_COMMITTER_DATE: data.timestamp,
-      },
-    );
+    await this.git(["commit", "-m", `♥ ${data.avgBpm}bpm @ ${data.timestamp}`], this.dir, {
+      GIT_AUTHOR_DATE: data.timestamp,
+      GIT_COMMITTER_DATE: data.timestamp,
+    });
     this.pendingCommits++;
   }
 
@@ -225,10 +240,15 @@ export class GitEngine {
 
   private async commitEventUnlocked(data: EventData): Promise<void> {
     const filename = beatFilename(data.timestamp, data.kind);
-    const content = JSON.stringify({
-      bpm: data.bpm,
-      kind: data.kind,
-    }, null, 2) + "\n";
+    const content =
+      JSON.stringify(
+        {
+          bpm: data.bpm,
+          kind: data.kind,
+        },
+        null,
+        2,
+      ) + "\n";
 
     await writeFile(join(this.dir, "beats", filename), content);
     await this.git(["add", join("beats", filename)], this.dir);
@@ -247,11 +267,17 @@ export class GitEngine {
    * Bulk-import commits using `git fast-import`. Streams directly to the
    * process to avoid buffering everything in memory.
    */
-  fastImport(entries: CommitEntry[], onProgress?: (done: number, total: number) => void): Promise<void> {
+  fastImport(
+    entries: CommitEntry[],
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<void> {
     return this.exclusive(() => this.fastImportUnlocked(entries, onProgress));
   }
 
-  private async fastImportUnlocked(entries: CommitEntry[], onProgress?: (done: number, total: number) => void): Promise<void> {
+  private async fastImportUnlocked(
+    entries: CommitEntry[],
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<void> {
     if (entries.length === 0) return;
 
     // symbolic-ref also names the unborn branch of a repo with no commits yet
@@ -259,18 +285,30 @@ export class GitEngine {
     let branch = "main";
     try {
       branch = (await this.git(["symbolic-ref", "--short", "HEAD"], this.dir)) || branch;
-    } catch { /* detached HEAD */ }
+    } catch {
+      /* detached HEAD */
+    }
     let parentRef: string | null = null;
     try {
       parentRef = await this.git(["rev-parse", "--verify", "--quiet", "HEAD"], this.dir);
-    } catch { /* no commits yet: the first imported commit has no parent */ }
+    } catch {
+      /* no commits yet: the first imported commit has no parent */
+    }
 
     const existingFiles = await this.readTrackedFiles();
 
     let userName = "Cora";
     let userEmail = "cora@heartbeat";
-    try { userName = await this.git(["config", "user.name"], this.dir); } catch { /* */ }
-    try { userEmail = await this.git(["config", "user.email"], this.dir); } catch { /* */ }
+    try {
+      userName = await this.git(["config", "user.name"], this.dir);
+    } catch {
+      /* */
+    }
+    try {
+      userEmail = await this.git(["config", "user.email"], this.dir);
+    } catch {
+      /* */
+    }
 
     // Spawn fast-import and stream to it
     const child = spawn("git", ["fast-import", "--done", "--quiet"], {
@@ -283,7 +321,9 @@ export class GitEngine {
       child.on("error", reject);
       child.on("close", resolve);
     });
-    exited.catch(() => { /* surfaced when awaited below */ });
+    exited.catch(() => {
+      /* surfaced when awaited below */
+    });
 
     const encoder = new TextEncoder();
     const stdin = child.stdin;
@@ -291,7 +331,9 @@ export class GitEngine {
     const writeBytes = async (bytes: Uint8Array) => {
       if (!stdin.write(bytes)) await once(stdin, "drain");
     };
-    const write = async (s: string) => { await writeBytes(encoder.encode(s)); };
+    const write = async (s: string) => {
+      await writeBytes(encoder.encode(s));
+    };
     const writeData = async (data: Uint8Array) => {
       await write(`data ${data.length}\n`);
       await writeBytes(data);
@@ -321,10 +363,17 @@ export class GitEngine {
       let commitMsg: string;
       if (isBaseline) {
         const bd = data as BaselineData;
-        fileContent = JSON.stringify({
-          avg_bpm: bd.avgBpm, min_bpm: bd.minBpm,
-          max_bpm: bd.maxBpm, beat_count: bd.beatCount,
-        }, null, 2) + "\n";
+        fileContent =
+          JSON.stringify(
+            {
+              avg_bpm: bd.avgBpm,
+              min_bpm: bd.minBpm,
+              max_bpm: bd.maxBpm,
+              beat_count: bd.beatCount,
+            },
+            null,
+            2,
+          ) + "\n";
         commitMsg = `♥ ${bd.avgBpm}bpm @ ${ts}`;
       } else {
         const ed = data as EventData;
@@ -390,7 +439,9 @@ export class GitEngine {
         const content = await readFile(join(this.dir, filePath));
         files.set(filePath, content);
       }
-    } catch { /* empty repo */ }
+    } catch {
+      /* empty repo */
+    }
     return files;
   }
 
@@ -410,7 +461,9 @@ export class GitEngine {
         await this.git(["push"], this.dir, this.auth);
         this.pendingCommits = 0;
       } catch (e) {
-        console.error(`Push failed after pull --rebase (${this.pendingCommits} commits queued): ${e}`);
+        console.error(
+          `Push failed after pull --rebase (${this.pendingCommits} commits queued): ${e}`,
+        );
       }
     }
   }

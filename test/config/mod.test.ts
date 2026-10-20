@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { generateApiKey, loadConfig, saveConfig, type CoraConfig } from "../../src/config/mod.ts";
+import { type CoraConfig, generateApiKey, loadConfig, saveConfig } from "../../src/config/mod.ts";
 
 test("generateApiKey - returns 64-char hex string", () => {
   const key = generateApiKey();
@@ -47,7 +47,10 @@ test("saveConfig/loadConfig - roundtrip, creating the directory", async () => {
 test("loadConfig - fills in defaults for missing optional fields", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json");
-    await writeFile(path, JSON.stringify({ githubPat: "ghp_x", repoUrl: "https://x", apiKey: "key", port: 9000 }));
+    await writeFile(
+      path,
+      JSON.stringify({ githubPat: "ghp_x", repoUrl: "https://x", apiKey: "key", port: 9000 }),
+    );
 
     assert.deepEqual(await loadConfig(path), {
       githubPat: "ghp_x",
@@ -77,8 +80,12 @@ test("saveConfig - config file is readable by the owner only", {
   try {
     const path = join(tmpDir, "cora", "config.json");
     const config: CoraConfig = {
-      githubPat: "ghp_x", repoUrl: "https://x", apiKey: "key",
-      commitIntervalMs: 300_000, eventThresholdPercent: 20, port: 7331,
+      githubPat: "ghp_x",
+      repoUrl: "https://x",
+      apiKey: "key",
+      commitIntervalMs: 300_000,
+      eventThresholdPercent: 20,
+      port: 7331,
     };
     await saveConfig(config, path);
     assert.deepEqual((await stat(path)).mode & 0o777, 0o600);
