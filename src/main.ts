@@ -11,13 +11,13 @@ const HELP = `
 cora — your heartbeat on GitHub
 
 Usage:
-  cora init          Interactive setup: GitHub PAT, repo, API key
-  cora start         Begin listening for beats and committing
-  cora stop          Graceful shutdown, flush queued beats
-  cora status        Show connection state, beats/min, queue depth
-  cora stats         Lifetime stats: total beats, longest streak, avg BPM
-  cora replay        Replay queued beats from an offline period
-  cora mock [speed]  Simulate heartbeat in real-time (speed: 1=realtime, 1440=1day/min)
+  cora init          Interactive setup: GitHub PAT, repo URL, port; generates an API key
+  cora start         Listen for beats and commit them
+  cora stop          Stop the running instance; it commits and pushes pending beats first
+  cora status        Show whether Cora is running: its PID, port and latest BPM
+  cora stats         Lifetime stats: total commits, first/last beat, current daily streak, average BPM
+  cora replay        Commit beats queued while commits were failing
+  cora mock [speed]  Simulate a heart live (speed: 1 = real time, 60 = 1 hour/min; capped at 100x)
   cora mock --from 2025-01-01 [--to 2025-06-01]  Backfill past dates
 
 Options:

@@ -50,7 +50,7 @@ cora mock 60                                  # one simulated hour per minute (s
 cora mock --from 2025-01-01 --to 2025-06-01   # backfill a date range via git fast-import
 ```
 
-Live speed is capped at 100x (one 5 s sample every 50 ms of real time), whatever larger value you pass. `--to` only applies with `--from` and defaults to now. A backfill resumes after the newest beat already in the repo, and live mode first fills the gap since that beat if it is older than `commitIntervalMs`. `--speed` has no effect on a backfill.
+Live speed is capped at 100x (one 5 s sample every 50 ms of real time); a larger value is reduced to 100x with a note. `--to` only applies with `--from` and defaults to now. A backfill resumes after the newest beat already in the repo, and live mode first fills the gap since that beat if it is older than `commitIntervalMs`. `--speed` has no effect on a backfill.
 
 ### Sending beats
 

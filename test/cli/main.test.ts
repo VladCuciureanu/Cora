@@ -89,3 +89,14 @@ test("cli - init re-prompts for an invalid port and prints the real config path"
     assert.ok(stdout.includes(`Config saved to ${configPathIn(home)}`), stdout);
   });
 });
+
+test("cli - help describes what status, stats and mock actually do", async () => {
+  await withHome(async (home) => {
+    const { code, stdout } = await runCli(["--help"], home);
+    assert.equal(code, 0);
+    assert.match(stdout, /cora status +Show whether Cora is running: its PID, port and latest BPM/);
+    assert.match(stdout, /cora stats +.*total commits, .*current daily streak, average BPM/);
+    assert.match(stdout, /capped at 100x/);
+    assert.doesNotMatch(stdout, /queue depth|longest streak|1440/);
+  });
+});

@@ -5,6 +5,9 @@ import { type CommitEntry, GitEngine } from "../git.ts";
 import { MockHeart } from "../mock/heart.ts";
 import { OfflineQueue } from "../queue.ts";
 
+/** Fastest live simulation speed. */
+const MAX_LIVE_SPEED = 100;
+
 function parseArgs(args: string[]): {
   speed: number;
   startDate: Date | null;
@@ -33,7 +36,7 @@ function parseArgs(args: string[]): {
   }
 
   if (Number.isNaN(speed) || speed <= 0) {
-    throw new Error("Speed must be a positive number (e.g. 60 = 1 hour/min, 1440 = 1 day/min)");
+    throw new Error("Speed must be a positive number (e.g. 60 = 1 hour/min)");
   }
 
   return { speed, startDate, endDate };
@@ -213,6 +216,11 @@ export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
   // Only advertise the PID once setup has succeeded
   await writeFile(pidPath(), String(process.pid));
 
+  // One 5 s sample every 50 ms of real time at most
+  if (speed > MAX_LIVE_SPEED) {
+    console.log(`  Speed ${speed}x is above the live maximum; using ${MAX_LIVE_SPEED}x`);
+    speed = MAX_LIVE_SPEED;
+  }
   console.log(`♥ Mock heart started (speed: ${speed}x)`);
   console.log(`  1 real second = ${speed} simulated seconds`);
   if (speed >= 60) console.log(`  ≈ ${(speed / 60).toFixed(1)} simulated minutes per real second`);
@@ -231,7 +239,7 @@ export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
   let lastDay = new Date(simTime).getDate();
   let lastFlush = simTime;
 
-  const sampleIntervalReal = Math.max(50, 5000 / speed);
+  const sampleIntervalReal = 5000 / speed;
   const simStepMs = 5000;
 
   const ticker = setInterval(async () => {
