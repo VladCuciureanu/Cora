@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { type CoraConfig, loadConfig, repoDir } from "../config/mod.ts";
+import { type CoraConfig, loadConfig, repoDir } from "./config.ts";
 
 export interface BaselineData {
   timestamp: string;
@@ -16,7 +16,7 @@ export interface BaselineData {
 export interface EventData {
   timestamp: string;
   bpm: number;
-  kind: "spike" | "drop" | "reconnect" | "custom";
+  kind: "spike" | "drop" | "reconnect";
 }
 
 export type CommitEntry =
@@ -25,12 +25,7 @@ export type CommitEntry =
 
 const execFileAsync = promisify(execFile);
 
-const EVENT_KINDS = [
-  "spike",
-  "drop",
-  "reconnect",
-  "custom",
-] as const satisfies readonly EventData["kind"][];
+const EVENT_KINDS = ["spike", "drop", "reconnect"] as const satisfies readonly EventData["kind"][];
 
 /**
  * Filename for a beat at the given timestamp. ':' is not allowed in Windows
@@ -59,6 +54,26 @@ export function parseBeatFilename(name: string): Date | null {
   }
   const date = new Date(ts);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** Repo-relative path, file content and commit message for a beat commit. */
+function beatCommit(entry: CommitEntry): { path: string; content: string; message: string } {
+  const { timestamp } = entry.data;
+  if (entry.type === "baseline") {
+    const { avgBpm, minBpm, maxBpm, beatCount } = entry.data;
+    const fields = { avg_bpm: avgBpm, min_bpm: minBpm, max_bpm: maxBpm, beat_count: beatCount };
+    return {
+      path: `beats/${beatFilename(timestamp)}`,
+      content: `${JSON.stringify(fields, null, 2)}\n`,
+      message: `♥ ${avgBpm}bpm @ ${timestamp}`,
+    };
+  }
+  const { bpm, kind } = entry.data;
+  return {
+    path: `beats/${beatFilename(timestamp, kind)}`,
+    content: `${JSON.stringify({ bpm, kind }, null, 2)}\n`,
+    message: `⚡ ${bpm}bpm ${kind} @ ${timestamp}`,
+  };
 }
 
 export async function git(
@@ -203,61 +218,27 @@ export class GitEngine {
   async initLocal(): Promise<void> {
     await mkdir(join(this.dir, "beats"), { recursive: true });
     if (!this.skipPush) {
-      this.pushTimer = setInterval(() => this.flush(), this.pushIntervalMs);
+      // Never the only thing keeping the process alive (e.g. after a failed command)
+      this.pushTimer = setInterval(() => this.flush(), this.pushIntervalMs).unref();
     }
   }
 
   commitBaseline(data: BaselineData): Promise<void> {
-    return this.exclusive(() => this.commitBaselineUnlocked(data));
-  }
-
-  private async commitBaselineUnlocked(data: BaselineData): Promise<void> {
-    const filename = beatFilename(data.timestamp);
-    const content = `${JSON.stringify(
-      {
-        avg_bpm: data.avgBpm,
-        min_bpm: data.minBpm,
-        max_bpm: data.maxBpm,
-        beat_count: data.beatCount,
-      },
-      null,
-      2,
-    )}\n`;
-
-    await writeFile(join(this.dir, "beats", filename), content);
-    await this.git(["add", join("beats", filename)], this.dir);
-    await this.git(["commit", "-m", `♥ ${data.avgBpm}bpm @ ${data.timestamp}`], this.dir, {
-      GIT_AUTHOR_DATE: data.timestamp,
-      GIT_COMMITTER_DATE: data.timestamp,
-    });
-    this.pendingCommits++;
+    return this.exclusive(() => this.commitUnlocked({ type: "baseline", data }));
   }
 
   commitEvent(data: EventData): Promise<void> {
-    return this.exclusive(() => this.commitEventUnlocked(data));
+    return this.exclusive(() => this.commitUnlocked({ type: "event", data }));
   }
 
-  private async commitEventUnlocked(data: EventData): Promise<void> {
-    const filename = beatFilename(data.timestamp, data.kind);
-    const content = `${JSON.stringify(
-      {
-        bpm: data.bpm,
-        kind: data.kind,
-      },
-      null,
-      2,
-    )}\n`;
-
-    await writeFile(join(this.dir, "beats", filename), content);
-    await this.git(["add", join("beats", filename)], this.dir);
-    await this.git(
-      ["commit", "-m", `⚡ ${data.bpm}bpm ${data.kind} @ ${data.timestamp}`],
-      this.dir,
-      {
-        GIT_AUTHOR_DATE: data.timestamp,
-        GIT_COMMITTER_DATE: data.timestamp,
-      },
-    );
+  private async commitUnlocked(entry: CommitEntry): Promise<void> {
+    const { path, content, message } = beatCommit(entry);
+    await writeFile(join(this.dir, path), content);
+    await this.git(["add", path], this.dir);
+    await this.git(["commit", "-m", message], this.dir, {
+      GIT_AUTHOR_DATE: entry.data.timestamp,
+      GIT_COMMITTER_DATE: entry.data.timestamp,
+    });
     this.pendingCommits++;
   }
 
@@ -352,44 +333,18 @@ export class GitEngine {
 
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
-      const isBaseline = entry.type === "baseline";
-      const data = entry.data;
-      const ts = data.timestamp;
-      const epoch = Math.floor(new Date(ts).getTime() / 1000);
-
-      let fileContent: string;
-      let commitMsg: string;
-      if (isBaseline) {
-        const bd = data as BaselineData;
-        fileContent = `${JSON.stringify(
-          {
-            avg_bpm: bd.avgBpm,
-            min_bpm: bd.minBpm,
-            max_bpm: bd.maxBpm,
-            beat_count: bd.beatCount,
-          },
-          null,
-          2,
-        )}\n`;
-        commitMsg = `♥ ${bd.avgBpm}bpm @ ${ts}`;
-      } else {
-        const ed = data as EventData;
-        fileContent = `${JSON.stringify({ bpm: ed.bpm, kind: ed.kind }, null, 2)}\n`;
-        commitMsg = `⚡ ${ed.bpm}bpm ${ed.kind} @ ${ts}`;
-      }
-
-      const filename = `beats/${beatFilename(ts, isBaseline ? undefined : (data as EventData).kind)}`;
+      const epoch = Math.floor(new Date(entry.data.timestamp).getTime() / 1000);
+      const { path, content, message } = beatCommit(entry);
       const mark = markNum++;
-      const contentBytes = encoder.encode(fileContent);
 
       await write(`blob\nmark :${mark}\n`);
-      await writeData(contentBytes);
+      await writeData(encoder.encode(content));
 
       const commitMark = markNum++;
       await write(`commit refs/heads/${branch}\nmark :${commitMark}\n`);
       await write(`author ${userName} <${userEmail}> ${epoch} +0000\n`);
       await write(`committer ${userName} <${userEmail}> ${epoch} +0000\n`);
-      await writeData(encoder.encode(commitMsg));
+      await writeData(encoder.encode(message));
 
       if (i === 0 && parentRef) {
         await write(`from ${parentRef}\n`);
@@ -399,12 +354,12 @@ export class GitEngine {
 
       // Include existing files in first commit to preserve them
       if (i === 0) {
-        for (const [path, blobMark] of existingFileMarks) {
-          await write(`M 100644 :${blobMark} ${path}\n`);
+        for (const [filePath, blobMark] of existingFileMarks) {
+          await write(`M 100644 :${blobMark} ${filePath}\n`);
         }
       }
 
-      await write(`M 100644 :${mark} ${filename}\n\n`);
+      await write(`M 100644 :${mark} ${path}\n\n`);
       lastMark = commitMark;
 
       if (onProgress && (i + 1) % 500 === 0) {
@@ -470,10 +425,6 @@ export class GitEngine {
     if (!this.skipPush) {
       await this.flush();
     }
-  }
-
-  getDir(): string {
-    return this.dir;
   }
 
   async getLatestBeatTimestamp(): Promise<Date | null> {

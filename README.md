@@ -32,15 +32,15 @@ npm start -- --help   # or run from source without linking
 ## Usage
 
 ```sh
-cora init     # prompt for PAT, repo URL and port; generate an API key; print a setup QR code
+cora init     # prompt for PAT, repo URL and port (asked again until it is 1-65535); generate an API key; print a setup QR code
 cora start    # clone the repo, replay queued beats, start the server
-cora stop     # SIGTERM the running instance; it flushes and pushes before exiting
-cora status   # whether it is running, its port, and the latest BPM
+cora stop     # SIGTERM the running instance; it flushes and pushes before exiting (exits 1 if it is not running)
+cora status   # whether it is running, its PID and port, and the latest BPM
 cora stats    # total commits, first/last beat, current daily streak, average BPM
 cora replay   # commit beats queued while commits were failing
 ```
 
-`cora --help` (`-h`) prints usage and `cora --version` (`-v`) prints the version. Missing config or an unknown command exits with status 1.
+`cora --help` (`-h`) prints usage, `cora <command> --help` prints that command's usage and options, and `cora --version` (`-v`) prints the version. Missing config, an unknown command, an unknown option, a missing option value, an extra argument or any other failure (for example a repo that cannot be cloned) exits with status 1 and a one-line `cora: ...` error on stderr.
 
 ### Mock heart
 
@@ -50,7 +50,7 @@ cora mock 60                                  # one simulated hour per minute (s
 cora mock --from 2025-01-01 --to 2025-06-01   # backfill a date range via git fast-import
 ```
 
-Live speed is capped at 100x (one 5 s sample every 50 ms of real time), whatever larger value you pass. `--to` only applies with `--from` and defaults to now. A backfill resumes after the newest beat already in the repo, and live mode first fills the gap since that beat if it is older than `commitIntervalMs`. `--speed` has no effect on a backfill.
+Live speed is capped at 100x (one 5 s sample every 50 ms of real time); a larger value is reduced to 100x with a note. `--to` requires `--from` and defaults to now. A backfill resumes after the newest beat already in the repo, and live mode first fills the gap since that beat if it is older than `commitIntervalMs`. `--speed` has no effect on a backfill.
 
 ### Sending beats
 
@@ -62,9 +62,9 @@ Content-Type: application/json
 {"timestamp": "2026-03-22T14:30:00.000Z", "bpm": 72, "rr_intervals": [830]}
 ```
 
-`timestamp` and `bpm` are required. Responses: `200 {"status":"ok"}`, `200 {"status":"duplicate"}` for a timestamp already seen, `400` for bad JSON or missing fields, `401` for a wrong key. `rr_intervals` is accepted but not stored.
+`timestamp` (an ISO 8601 date-time that exists, so not e.g. Feb 30) and `bpm` (a number from 20 to 300) are required. Responses: `200 {"status":"ok"}`, `200 {"status":"duplicate"}` for a timestamp already seen, `400` for bad JSON or missing or invalid fields, `401` for a wrong key and `404` for any other route. Errors are JSON, `{"error":"<reason>"}`. `rr_intervals` is accepted but not stored.
 
-`GET /health` needs no key and returns `{"status":"alive","bpm":<latest or null>}`. The server listens on all interfaces (`0.0.0.0`).
+`GET /health` needs no key and returns only `{"status":"alive"}`. `GET /status` needs the same `Authorization` header as `/beat` and returns `{"status":"alive","bpm":<latest or null>}`; `cora status` reads it. The server listens on all interfaces (`0.0.0.0`).
 
 ### What gets committed
 
@@ -77,7 +77,7 @@ Colons in the timestamp become `-` in filenames. A spike or drop is a reading at
 
 ### Files and config
 
-Everything lives in `~/.config/cora/` (`$HOME`, else `%USERPROFILE%`): `config.json`, the clone in `repo/`, `queue.jsonl` and `cora.pid`. `cora init` writes `config.json` with owner-only permissions:
+Everything lives in `~/.config/cora/` (`$HOME` on Linux and macOS, `%USERPROFILE%` on Windows): `config.json`, the clone in `repo/`, `queue.jsonl` and `cora.pid`. `cora init` writes `config.json` with owner-only permissions:
 
 | Key                     | Default       | Meaning                                      |
 | ----------------------- | ------------- | -------------------------------------------- |
@@ -87,6 +87,8 @@ Everything lives in `~/.config/cora/` (`$HOME`, else `%USERPROFILE%`): `config.j
 | `port`                  | `7331`        | HTTP server port                             |
 | `commitIntervalMs`      | `300000`      | Time between baseline commits                |
 | `eventThresholdPercent` | `20`          | Deviation (%) that counts as a spike or drop |
+
+Commands fail with an error naming the problem if `config.json` is not valid JSON, has an unknown key, leaves `githubPat`, `repoUrl` or `apiKey` empty, or has a `port` outside 1–65535 or a non-positive `commitIntervalMs` or `eventThresholdPercent`; `cora init` offers to overwrite such a file.
 
 The token is sent as an HTTP header per git command and is never written to `.git/config`.
 

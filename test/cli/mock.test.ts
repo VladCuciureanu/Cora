@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { generateEntries } from "../../src/cli/mock.ts";
-import type { BaselineData } from "../../src/git/mod.ts";
+import type { BaselineData } from "../../src/git.ts";
 import { MockHeart } from "../../src/mock/heart.ts";
 
 test("generateEntries - one baseline per commit interval, stamped with sample time", () => {

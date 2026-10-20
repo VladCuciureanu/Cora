@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BeatBuffer, detectDeviation, pushRolling, summarizeWindow } from "../../src/beats/mod.ts";
-import type { BaselineData, EventData } from "../../src/git/mod.ts";
+import { BeatBuffer, detectDeviation, pushRolling, summarizeWindow } from "../src/beats.ts";
+import type { BaselineData, EventData } from "../src/git.ts";
 
 test("BeatBuffer - flushWindow computes correct baseline", async () => {
   const buffer = new BeatBuffer(20);

@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { type CoraConfig, generateApiKey, loadConfig, saveConfig } from "../../src/config/mod.ts";
+import { type CoraConfig, generateApiKey, loadConfig, saveConfig } from "../src/config.ts";
 
 test("generateApiKey - returns 64-char hex string", () => {
   const key = generateApiKey();
@@ -63,13 +63,39 @@ test("loadConfig - fills in defaults for missing optional fields", async () => {
   });
 });
 
-test("loadConfig - returns null for a missing or malformed file", async () => {
+test("loadConfig - returns null for a missing file", async () => {
   await withTempDir(async (dir) => {
     assert.deepEqual(await loadConfig(join(dir, "missing.json")), null);
+  });
+});
 
+test("loadConfig - a malformed file is an error, not a missing config", async () => {
+  await withTempDir(async (dir) => {
     const path = join(dir, "config.json");
     await writeFile(path, "{ not json");
-    assert.deepEqual(await loadConfig(path), null);
+    await assert.rejects(loadConfig(path), /is not valid JSON/);
+  });
+});
+
+test("loadConfig - rejects unknown keys and wrongly typed values", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json");
+    const valid = { githubPat: "ghp_x", repoUrl: "https://x", apiKey: "key" };
+    const cases: [Record<string, unknown>, RegExp][] = [
+      [[] as unknown as Record<string, unknown>, /expected a JSON object/],
+      [{ ...valid, prot: 8080 }, /unknown key "prot"/],
+      [{ ...valid, githubPat: undefined }, /"githubPat" must be a non-empty string/],
+      [{ ...valid, repoUrl: 42 }, /"repoUrl" must be a non-empty string/],
+      [{ ...valid, apiKey: "" }, /"apiKey" must be a non-empty string/],
+      [{ ...valid, port: "8080" }, /"port" must be an integer from 1 to 65535/],
+      [{ ...valid, port: 70000 }, /"port" must be an integer from 1 to 65535/],
+      [{ ...valid, commitIntervalMs: 0 }, /"commitIntervalMs" must be a positive number/],
+      [{ ...valid, eventThresholdPercent: "20" }, /"eventThresholdPercent" must be a positive/],
+    ];
+    for (const [config, error] of cases) {
+      await writeFile(path, JSON.stringify(config));
+      await assert.rejects(loadConfig(path), error, JSON.stringify(config));
+    }
   });
 });
 

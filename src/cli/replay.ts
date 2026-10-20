@@ -1,6 +1,6 @@
-import { loadConfig } from "../config/mod.ts";
-import { GitEngine } from "../git/mod.ts";
-import { OfflineQueue } from "../queue/mod.ts";
+import { requireConfig } from "../config.ts";
+import { GitEngine } from "../git.ts";
+import { OfflineQueue } from "../queue.ts";
 
 /**
  * Commit every queued entry in order. Entries that fail to commit stay in the
@@ -18,11 +18,7 @@ export function replayQueue(
 }
 
 export async function replayCommand(): Promise<void> {
-  const config = await loadConfig();
-  if (!config) {
-    console.error("No config found. Run `cora init` first.");
-    process.exit(1);
-  }
+  const config = await requireConfig();
 
   const queue = new OfflineQueue();
   const total = await queue.size();
@@ -35,14 +31,18 @@ export async function replayCommand(): Promise<void> {
   console.log(`♥ Replaying ${total} queued beat(s)...`);
 
   const gitEngine = new GitEngine();
-  await gitEngine.init();
+  await gitEngine.init(config);
 
-  const { processed, failed } = await replayQueue(queue, gitEngine);
-  for (const { error } of failed) {
-    console.error(`Failed to replay entry: ${error}`);
+  let result: Awaited<ReturnType<typeof replayQueue>>;
+  try {
+    result = await replayQueue(queue, gitEngine);
+    for (const { error } of result.failed) {
+      console.error(`Failed to replay entry: ${error}`);
+    }
+  } finally {
+    await gitEngine.shutdown();
   }
-
-  await gitEngine.shutdown();
+  const { processed, failed } = result;
   console.log(
     `✓ Replayed ${processed} beat(s)${failed.length > 0 ? `, ${failed.length} failed (kept in queue)` : ""}.`,
   );

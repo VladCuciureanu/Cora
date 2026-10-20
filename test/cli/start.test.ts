@@ -3,11 +3,11 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { BeatBuffer } from "../../src/beats/mod.ts";
+import { BeatBuffer } from "../../src/beats.ts";
 import { commitListener } from "../../src/cli/start.ts";
-import type { BaselineData } from "../../src/git/mod.ts";
-import { GitEngine, git } from "../../src/git/mod.ts";
-import { OfflineQueue } from "../../src/queue/mod.ts";
+import type { BaselineData } from "../../src/git.ts";
+import { GitEngine, git } from "../../src/git.ts";
+import { OfflineQueue } from "../../src/queue.ts";
 
 async function withTempRepo(fn: (dir: string, queue: OfflineQueue) => Promise<void>) {
   const dir = await mkdtemp(join(tmpdir(), "cora-start-test-"));

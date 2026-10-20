@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { calculateStreak, getStats, parseBpmsFromMessages } from "../../src/cli/stats.ts";
-import { git } from "../../src/git/mod.ts";
+import { git } from "../../src/git.ts";
 
 test("calculateStreak - consecutive days from today", () => {
   const today = new Date("2026-03-24T12:00:00Z");

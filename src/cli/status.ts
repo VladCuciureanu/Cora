@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { loadConfig, pidPath } from "../config/mod.ts";
+import { pidPath, requireConfig } from "../config.ts";
 
 export async function statusCommand({
   configPath,
@@ -8,11 +8,7 @@ export async function statusCommand({
   configPath?: string;
   pidFile?: string;
 } = {}): Promise<void> {
-  const config = await loadConfig(configPath);
-  if (!config) {
-    console.error("No config found. Run `cora init` first.");
-    process.exit(1);
-  }
+  const config = await requireConfig(configPath);
 
   // Check if process is running
   let running = false;
@@ -34,12 +30,19 @@ export async function statusCommand({
   console.log(`♥ Cora is running (PID ${pid})`);
   console.log(`  Port: ${config.port}`);
 
-  // Query health endpoint
+  // The latest BPM is only served to holders of the API key
   try {
-    const res = await fetch(`http://localhost:${config.port}/health`);
+    const res = await fetch(`http://localhost:${config.port}/status`, {
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+    });
+    if (!res.ok) {
+      await res.body?.cancel();
+      console.log(`  Could not read status endpoint (HTTP ${res.status}).`);
+      return;
+    }
     const data = await res.json();
     console.log(`  Current BPM: ${data.bpm ?? "no data yet"}`);
   } catch {
-    console.log("  Could not reach health endpoint.");
+    console.log("  Could not reach status endpoint.");
   }
 }

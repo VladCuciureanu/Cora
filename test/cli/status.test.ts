@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type TestContext, test } from "node:test";
 import { statusCommand } from "../../src/cli/status.ts";
-import { saveConfig } from "../../src/config/mod.ts";
+import { saveConfig } from "../../src/config.ts";
 
 /** PID of a process that has already exited. */
 async function deadPid(): Promise<number> {
@@ -65,7 +65,7 @@ test("status - PID of an exited process means not running", async (t) => {
   assert.deepEqual(await runStatus(t, { pid: await deadPid() }), "♥ Cora is not running.");
 });
 
-test("status - running process reports BPM from the health endpoint", async (t) => {
+test("status - running process reports BPM from the status endpoint", async (t) => {
   const { server, port } = await listen({ status: "alive", bpm: 72 });
   try {
     const output = await runStatus(t, { pid: process.pid, port });
@@ -89,10 +89,27 @@ test("status - null BPM is shown as no data yet", async (t) => {
   }
 });
 
-test("status - unreachable health endpoint is reported", async (t) => {
+test("status - unreachable status endpoint is reported", async (t) => {
   const { server, port } = await listen({});
   server.close();
   await once(server, "close");
   const output = await runStatus(t, { pid: process.pid, port });
-  assert.ok(output.endsWith("  Could not reach health endpoint."), output);
+  assert.ok(output.endsWith("  Could not reach status endpoint."), output);
+});
+
+test("status - reads BPM from the authenticated status endpoint", async (t) => {
+  const server = createServer((req, res) => {
+    const ok = req.url === "/status" && req.headers.authorization === "Bearer key";
+    res.writeHead(ok ? 200 : 401, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(ok ? { status: "alive", bpm: 64 } : { error: "Unauthorized" }));
+  });
+  server.listen(0);
+  await once(server, "listening");
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const output = await runStatus(t, { pid: process.pid, port });
+    assert.ok(output.endsWith("  Current BPM: 64"), output);
+  } finally {
+    server.close();
+  }
 });

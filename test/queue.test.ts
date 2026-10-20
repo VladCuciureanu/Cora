@@ -4,7 +4,7 @@ import { rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { OfflineQueue } from "../../src/queue/mod.ts";
+import { OfflineQueue } from "../src/queue.ts";
 
 async function makeTempFile(suffix: string): Promise<string> {
   const file = join(tmpdir(), `cora-${randomUUID()}${suffix}`);
@@ -58,7 +58,7 @@ test("OfflineQueue - process re-queues entries whose handler fails", async () =>
     "2026-01-01T00:03:00Z",
   ];
   for (const timestamp of ts) {
-    await queue.enqueue({ type: "event", data: { timestamp, bpm: 100, kind: "custom" } });
+    await queue.enqueue({ type: "event", data: { timestamp, bpm: 100, kind: "spike" } });
   }
 
   const seen: string[] = [];
@@ -69,7 +69,7 @@ test("OfflineQueue - process re-queues entries whose handler fails", async () =>
       if (entry.data.timestamp === ts[1]) {
         await queue.enqueue({
           type: "event",
-          data: { timestamp: "2026-01-01T00:04:00Z", bpm: 90, kind: "custom" },
+          data: { timestamp: "2026-01-01T00:04:00Z", bpm: 90, kind: "spike" },
         });
       }
       throw new Error("commit failed");
@@ -99,7 +99,7 @@ test("OfflineQueue - process with all successes empties the queue", async () => 
   const queue = new OfflineQueue(tmp);
   await queue.enqueue({
     type: "event",
-    data: { timestamp: "2026-01-01T00:00:00Z", bpm: 100, kind: "custom" },
+    data: { timestamp: "2026-01-01T00:00:00Z", bpm: 100, kind: "spike" },
   });
 
   const result = await queue.process(async () => {});

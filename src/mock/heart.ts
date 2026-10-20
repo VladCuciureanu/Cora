@@ -36,7 +36,7 @@ export class MockHeart {
   private baseRestingHr: number;
   private activities: ActivityBurst[];
   private noiseState = 0;
-  private timezone: string;
+  private clock: Intl.DateTimeFormat;
   private random: () => number;
 
   /**
@@ -45,7 +45,12 @@ export class MockHeart {
    */
   constructor(opts?: { restingHr?: number; timezone?: string; seed?: number }) {
     this.baseRestingHr = opts?.restingHr ?? 68;
-    this.timezone = opts?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+    this.clock = new Intl.DateTimeFormat("en-US", {
+      timeZone: opts?.timezone,
+      hour: "numeric",
+      minute: "numeric",
+      hourCycle: "h23",
+    });
     if (opts?.seed !== undefined) this.noiseState = opts.seed;
     this.random = opts?.seed !== undefined ? seededRandom(opts.seed) : Math.random;
     this.activities = this.planDayActivities();
@@ -184,8 +189,13 @@ export class MockHeart {
 
   /** Get minute-of-day in local timezone. */
   private getLocalMinuteOfDay(date: Date): number {
-    const local = new Date(date.toLocaleString("en-US", { timeZone: this.timezone }));
-    return local.getHours() * 60 + local.getMinutes();
+    let hour = 0;
+    let minute = 0;
+    for (const part of this.clock.formatToParts(date)) {
+      if (part.type === "hour") hour = Number(part.value);
+      else if (part.type === "minute") minute = Number(part.value);
+    }
+    return hour * 60 + minute;
   }
 
   /** Replan activities (call at midnight or for a new day). */

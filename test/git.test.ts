@@ -10,7 +10,7 @@ import {
   git,
   parseBeatFilename,
   stripUrlCredentials,
-} from "../../src/git/mod.ts";
+} from "../src/git.ts";
 
 function assertIncludes(actual: string, expected: string): void {
   assert.ok(
@@ -208,7 +208,7 @@ test("beatFilename - contains no ':' and round-trips", () => {
     "2025-01-15T08:30:45Z",
     "2026-03-24T14:00:00+02:00",
   ]) {
-    for (const kind of [undefined, "spike", "drop", "reconnect", "custom"] as const) {
+    for (const kind of [undefined, "spike", "drop", "reconnect"] as const) {
       const name = beatFilename(ts, kind);
       assert.ok(!name.includes(":"), `${name} should not contain ':'`);
       assert.ok(name.endsWith(kind ? `.${kind}.beat` : ".beat"));
@@ -231,10 +231,10 @@ test("GitEngine - beat files are written without ':' in the name", async () => {
     const engine = new GitEngine(dir, { skipPush: true });
     await engine.initLocal();
 
-    await engine.commitEvent({ timestamp: "2026-03-24T12:05:00.000Z", bpm: 99, kind: "custom" });
+    await engine.commitEvent({ timestamp: "2026-03-24T12:05:00.000Z", bpm: 99, kind: "reconnect" });
 
     const files = await git(["ls-files", "beats"], dir);
-    assert.deepEqual(files, "beats/2026-03-24T12-05-00.000Z.custom.beat");
+    assert.deepEqual(files, "beats/2026-03-24T12-05-00.000Z.reconnect.beat");
 
     await engine.shutdown();
   });

@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { replayQueue } from "../../src/cli/replay.ts";
-import { GitEngine, git } from "../../src/git/mod.ts";
-import { OfflineQueue } from "../../src/queue/mod.ts";
+import { GitEngine, git } from "../../src/git.ts";
+import { OfflineQueue } from "../../src/queue.ts";
 
 function assertIncludes(actual: string, expected: string): void {
   assert.ok(
