@@ -103,3 +103,7 @@ npm run format      # biome check --write
 npm run check       # biome check, typecheck and tests
 npm run build       # tsc -p tsconfig.build.json -> dist/
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
