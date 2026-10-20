@@ -1,17 +1,6 @@
-import { execFile } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { repoDir } from "../config.ts";
-
-/** Run git and return stdout, ignoring a non-zero exit code (an empty repo yields empty output, not an error). */
-function gitStdout(args: string[], cwd: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile("git", args, { cwd, maxBuffer: Infinity }, (err, stdout) => {
-      // A string code means git could not be spawned at all (e.g. ENOENT); a numeric one is just the exit code.
-      if (err && typeof err.code === "string") reject(err);
-      else resolve(stdout ?? "");
-    });
-  });
-}
+import { git } from "../git.ts";
 
 export interface StatsResult {
   totalCommits: number;
@@ -47,14 +36,18 @@ export function parseBpmsFromMessages(messages: string[]): number[] {
 }
 
 export async function getStats(dir: string, today?: Date): Promise<StatsResult | null> {
-  // Count total commits
-  const totalOut = await gitStdout(["rev-list", "--count", "HEAD"], dir);
-  const totalCommits = parseInt(totalOut.trim(), 10);
+  // Count total commits; this fails in a repo with no commits yet
+  let totalOut: string;
+  try {
+    totalOut = await git(["rev-list", "--count", "HEAD"], dir);
+  } catch (e) {
+    if (typeof (e as NodeJS.ErrnoException).code === "string") throw e; // git could not be spawned
+    return null;
+  }
+  const totalCommits = parseInt(totalOut, 10);
 
   // Get first and last commit dates
-  const logOut = await gitStdout(["log", "--format=%aI", "--reverse"], dir);
-  const dates = logOut.trim().split("\n").filter(Boolean);
-
+  const dates = (await git(["log", "--format=%aI", "--reverse"], dir)).split("\n").filter(Boolean);
   if (dates.length === 0) return null;
 
   const firstBeat = dates[0];
@@ -62,8 +55,7 @@ export async function getStats(dir: string, today?: Date): Promise<StatsResult |
   const streakDays = calculateStreak(dates, today ?? new Date());
 
   // Parse BPMs from commit messages
-  const msgOut = await gitStdout(["log", "--format=%s"], dir);
-  const messages = msgOut.trim().split("\n");
+  const messages = (await git(["log", "--format=%s"], dir)).split("\n");
   const bpms = parseBpmsFromMessages(messages);
   const avgBpm = bpms.length > 0 ? Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length) : null;
 
