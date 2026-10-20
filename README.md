@@ -1,96 +1,100 @@
 # Cora
 
-A wearable-to-GitHub bridge that turns your contribution graph into a real-time electrocardiogram. Each heartbeat from your Apple Watch becomes a commit — a permanent, tamper-evident record of your alive-ness. The streak ends when you die.
+Cora commits your heart rate to a GitHub repo, so your contribution graph becomes an electrocardiogram. The streak ends when you die.
 
-## How It Works
-
-1. **Apple Watch** sends heart rate data via an iOS Shortcut to Cora's local HTTP server
-2. **Cora** buffers beats, detects events (spikes, drops, reconnects), and commits them to a GitHub repo
-3. **Your contribution graph** lights up with your actual heartbeat
-
-Commits look like:
+A phone (for example an iOS Shortcut reading Apple Watch data) posts heart-rate samples to Cora's local HTTP server. Cora commits a baseline every five minutes and an extra commit for each spike, drop or reconnect, each backdated to the sample's own time:
 
 ```
-♥ 72bpm @ 2026-03-22T14:30:00Z        # baseline (every 5 min)
-⚡ 142bpm spike @ 2026-03-22T15:02:00Z  # event (immediate)
+♥ 72bpm @ 2026-03-22T14:30:00.000Z
+⚡ 142bpm spike @ 2026-03-22T15:02:00.000Z
 ```
 
-Each commit creates a `beats/{timestamp}.beat` file (`beats/{timestamp}.{kind}.beat` for spike/drop/reconnect events) with BPM, R-R intervals, and metadata.
+No watch? `cora mock` simulates a plausible heart, including sleep, a post-lunch dip and the occasional run.
 
-## Setup
+## Requirements
 
-### Prerequisites
+- Node.js 26+ (see `.nvmrc`)
+- git 2.31+ on your `PATH`
+- A GitHub repo to hold the beats and a personal access token with `repo` scope
 
-- [Node.js](https://nodejs.org) 26+ (see `.nvmrc`) and `git` 2.31+ on your `PATH`
-- A GitHub account and personal access token
-- An Apple Watch + iPhone (for real data) or use `cora mock` for simulation
-
-### Install
+## Install
 
 ```sh
-# Clone, build, and link the `cora` command globally
 git clone https://github.com/VladCuciureanu/Cora.git
 cd Cora
 npm install
 npm run build
-npm link
+npm link        # puts `cora` on your PATH
 
-# Or run straight from source without installing
-npm start -- --help
+npm start -- --help   # or run from source without linking
 ```
-
-### Initialize
-
-```sh
-cora init
-```
-
-Walks you through GitHub PAT, repo URL, and port configuration. Generates an API key and displays a QR code for the iOS Shortcut.
 
 ## Usage
 
 ```sh
-cora start             # Start listening for heartbeats
-cora stop              # Graceful shutdown, flush pending beats
-cora status            # Check if running, current BPM
-cora stats             # Lifetime stats: total commits, streak, avg BPM
-cora replay            # Replay queued beats from offline periods
+cora init     # prompt for PAT, repo URL and port; generate an API key; print a setup QR code
+cora start    # clone the repo, replay queued beats, start the server
+cora stop     # SIGTERM the running instance; it flushes and pushes before exiting
+cora status   # whether it is running, its port, and the latest BPM
+cora stats    # total commits, first/last beat, current daily streak, average BPM
+cora replay   # commit beats queued while commits were failing
 ```
 
-### Mock Mode
+`cora --help` (`-h`) and `cora --version` (`-v`) do what you expect. Missing config or an unknown command exits with status 1.
 
-Simulate a realistic heart rate without a wearable:
+### Mock heart
 
 ```sh
-cora mock              # Real-time simulation
-cora mock 1440         # Fast-forward: 1 day per minute
-cora mock --from 2025-01-01 --to 2025-06-01  # Backfill past dates
+cora mock                                     # real time
+cora mock 60                                  # one simulated hour per minute (same as --speed 60)
+cora mock --from 2025-01-01 --to 2025-06-01   # backfill a date range via git fast-import
 ```
 
-The simulator models circadian rhythm, sleep cycles, random activity bursts, post-lunch dips, and wake/wind-down transitions.
+Live speed is capped at 100x (one 5 s sample every 50 ms of real time), whatever larger value you pass. `--to` only applies with `--from` and defaults to now. A backfill resumes after the newest beat already in the repo, and live mode first fills any gap since that beat. `--speed` has no effect on a backfill.
 
-## Architecture
+### Sending beats
 
 ```
-Apple Watch → iOS Shortcut → POST /beat → BeatBuffer → GitEngine → GitHub
-                                              ↓
-                                        OfflineQueue (on failure)
+POST http://<host>:<port>/beat
+Authorization: Bearer <apiKey>
+Content-Type: application/json
+
+{"timestamp": "2026-03-22T14:30:00Z", "bpm": 72, "rr_intervals": [830]}
 ```
 
-| Module    | Role                                                                          |
-| --------- | ----------------------------------------------------------------------------- |
-| `server/` | HTTP server with API key auth (`POST /beat`, `GET /health`)                   |
-| `beats/`  | Ring buffer, event detection (±20% BPM threshold)                             |
-| `git/`    | Clone, commit with original timestamps, batched push, pull-rebase on conflict |
-| `queue/`  | Persist undelivered beats to `queue.jsonl`, replay on reconnect               |
-| `mock/`   | Circadian heart rate simulator                                                |
-| `config/` | Config at `~/.config/cora/`                                                   |
+`timestamp` and `bpm` are required. Responses: `200 {"status":"ok"}`, `200 {"status":"duplicate"}` for a timestamp already seen, `400` for bad JSON or missing fields, `401` for a wrong key. `rr_intervals` is accepted but not stored.
+
+`GET /health` needs no key and returns `{"status":"alive","bpm":<latest or null>}`. The server listens on all interfaces (`0.0.0.0`).
+
+### What gets committed
+
+| Commit   | File                             | Contents                                       |
+| -------- | -------------------------------- | ---------------------------------------------- |
+| Baseline | `beats/<timestamp>.beat`         | `avg_bpm`, `min_bpm`, `max_bpm`, `beat_count`  |
+| Event    | `beats/<timestamp>.<kind>.beat`  | `bpm`, `kind` (`spike`, `drop`, `reconnect`)   |
+
+Colons in the timestamp become `-` in filenames. A spike or drop is a reading at least `eventThresholdPercent` away from the average of the last 30 readings; a reconnect is a sample arriving more than 60 s after the previous one. Commits are pushed every 10 s, with a `pull --rebase` and retry if the push is rejected. Commits that fail go to `queue.jsonl` and are retried by `cora start` or `cora replay`.
+
+### Files and config
+
+Everything lives in `~/.config/cora/` (`$HOME`, else `%USERPROFILE%`): `config.json`, the clone in `repo/`, `queue.jsonl` and `cora.pid`. `cora init` writes `config.json` with owner-only permissions:
+
+| Key                     | Default       | Meaning                                      |
+| ----------------------- | ------------- | -------------------------------------------- |
+| `githubPat`             |               | Token used for clone, pull and push          |
+| `repoUrl`               |               | Repo to commit beats to                      |
+| `apiKey`                | set by `init` | Bearer token for `POST /beat`                |
+| `port`                  | `7331`        | HTTP server port                             |
+| `commitIntervalMs`      | `300000`      | Time between baseline commits                |
+| `eventThresholdPercent` | `20`          | Deviation (%) that counts as a spike or drop |
+
+The token is sent as an HTTP header per git command and is never written to `.git/config`.
 
 ## Development
 
 ```sh
-npm run dev            # Watch mode (node --watch)
-npm test               # Run tests (node:test)
-npm run typecheck      # Type-check with tsc
-npm run build          # Emit dist/ for the `cora` bin
+npm run dev         # node --watch src/main.ts
+npm test            # node:test, test/**/*_test.ts
+npm run typecheck   # tsc
+npm run build       # tsc -p tsconfig.build.json -> dist/
 ```
