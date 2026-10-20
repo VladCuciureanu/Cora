@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 
 export interface CoraConfig {
   githubPat: string;
@@ -28,12 +28,15 @@ export interface ConfigDirInputs {
 
 /**
  * The config dir is `~/.config/cora` under `os.homedir()`. Before 0.2 it was
- * under `$HOME` (falling back to `%USERPROFILE%`), which differs on Windows
- * when HOME is set. If only that old location has a config, keep using it.
+ * under `$HOME`, which differs on Windows when HOME is set. If only that old
+ * location has a config, keep using it. A HOME that is unset or relative is
+ * never used, so a stray `.config/cora` under the cwd is not picked up.
  */
 export function resolveConfigDir({ homedir, env, exists, note }: ConfigDirInputs): string {
   const current = join(homedir, ".config", "cora");
-  const legacy = join(env.HOME ?? env.USERPROFILE ?? ".", ".config", "cora");
+  const home = env.HOME;
+  if (!home || !isAbsolute(home)) return current;
+  const legacy = join(home, ".config", "cora");
   if (
     legacy !== current &&
     !exists(join(current, "config.json")) &&

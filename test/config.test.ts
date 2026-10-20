@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { test } from "node:test";
 import {
   type CoraConfig,
@@ -164,4 +164,19 @@ test("resolveConfigDir - keeps a pre-0.2 config under a different HOME", () => {
     exists: (p) => p === join(legacy, "config.json") || p === join(current, "config.json"),
   });
   assert.equal(both, current);
+});
+
+test("resolveConfigDir - never uses a legacy dir relative to the cwd", () => {
+  const notes: string[] = [];
+  // a relative `.config/cora` that happens to exist under the cwd
+  const exists = (p: string) => !isAbsolute(p);
+  const current = join("/u", ".config", "cora");
+  for (const env of [{}, { HOME: "" }, { HOME: "rel" }, { USERPROFILE: "rel" }]) {
+    assert.equal(
+      resolveConfigDir({ homedir: "/u", env, exists, note: (m) => notes.push(m) }),
+      current,
+      JSON.stringify(env),
+    );
+  }
+  assert.deepEqual(notes, []);
 });
