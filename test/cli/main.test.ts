@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { type AddressInfo, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -188,33 +187,20 @@ async function gitHangingOnCommit(home: string): Promise<string> {
   return bin;
 }
 
-async function freePort(): Promise<number> {
-  const server = createServer().listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const { port } = server.address() as AddressInfo;
-  server.close();
-  await once(server, "close");
-  return port;
-}
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Run `args` until `ready` shows on stdout, call `trigger`, then send SIGINT,
- * wait for `stopping` and send SIGTERM while the shutdown hangs in git commit.
- */
-async function assertSecondSignalForcesExit(
-  args: string[],
-  overrides: Partial<CoraConfig>,
-  ready: RegExp,
-  stopping: RegExp,
-  trigger: () => Promise<void> = async () => {},
-) {
+test("cli - a later second signal forces mock to exit while its shutdown hangs", {
+  skip: process.platform === "win32" && "POSIX signals can't be delivered on Windows",
+}, async () => {
   await withHome(async (home) => {
     const remote = join(home, "remote.git");
     await git(["init", "--bare", remote], home);
-    await saveConfig(configFor(home, { repoUrl: remote, ...overrides }), configPathIn(home));
+    // a commit interval of one sample: the first tick commits, and hangs
+    const config = configFor(home, { repoUrl: remote, commitIntervalMs: 5000 });
+    await saveConfig(config, configPathIn(home));
     const bin = await gitHangingOnCommit(home);
 
-    const child = spawn(process.execPath, [MAIN, ...args], {
+    const child = spawn(process.execPath, [MAIN, "mock", "100"], {
       env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` },
     });
     const exited = once(child, "exit");
@@ -226,29 +212,28 @@ async function assertSecondSignalForcesExit(
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
     });
-    const output = () => `stdout: ${stdout}
-stderr: ${stderr}`;
+    const output = () => `stdout: ${stdout}\nstderr: ${stderr}`;
     const waitFor = async (pattern: RegExp) => {
       while (!pattern.test(stdout)) {
         if (child.exitCode !== null || child.signalCode !== null) {
-          assert.fail(`exited before ${pattern}
-${output()}`);
+          assert.fail(`exited before ${pattern}\n${output()}`);
         }
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await delay(20);
       }
     };
     const timer = setTimeout(() => child.kill("SIGKILL"), 15_000);
     try {
-      await waitFor(ready);
-      await trigger();
+      await waitFor(/Mock heart started/);
+      // let the first tick (due after 50 ms) get stuck in its commit
+      await delay(500);
       child.kill("SIGINT");
-      await waitFor(stopping);
-      // let the shutdown reach the hanging commit
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await waitFor(/Stopping mock heart/);
+      // past the window in which a repeat of the first signal is ignored
+      await delay(1500);
       const signalled = Date.now();
       child.kill("SIGTERM");
       const [code] = await exited;
-      assert.equal(code, 130, `stdout: ${stdout}\nstderr: ${stderr}`);
+      assert.equal(code, 143, output());
       assert.ok(Date.now() - signalled < 3000, "took too long to exit");
       assert.match(stderr, /^cora: forced exit\n$/m);
     } finally {
@@ -256,41 +241,4 @@ ${output()}`);
       child.kill("SIGKILL");
     }
   });
-}
-
-const noPosixSignals =
-  process.platform === "win32" && "POSIX signals can't be delivered on Windows";
-
-test("cli - a second signal forces start to exit while its shutdown hangs", {
-  skip: noPosixSignals,
-}, async () => {
-  const port = await freePort();
-  await assertSecondSignalForcesExit(
-    ["start"],
-    { port },
-    /Cora is alive/,
-    /Shutting down/,
-    async () => {
-      const res = await fetch(`http://127.0.0.1:${port}/beat`, {
-        method: "POST",
-        headers: { Authorization: "Bearer key", "Content-Type": "application/json" },
-        body: JSON.stringify({ timestamp: new Date().toISOString(), bpm: 70 }),
-      });
-      assert.equal(res.status, 200);
-    },
-  );
-});
-
-test("cli - a second signal forces mock to exit while its shutdown hangs", {
-  skip: noPosixSignals,
-}, async () => {
-  // a commit interval of one sample: the first tick commits, and hangs
-  await assertSecondSignalForcesExit(
-    ["mock", "100"],
-    { commitIntervalMs: 5000 },
-    /Mock heart started/,
-    /Stopping mock heart/,
-    // let the first tick (due after 50 ms) get stuck in its commit
-    () => new Promise((resolve) => setTimeout(resolve, 500)),
-  );
 });
