@@ -40,7 +40,7 @@ cora stats    # total commits, first/last beat, current daily streak, average BP
 cora replay   # commit beats queued while commits were failing
 ```
 
-`cora --help` (`-h`) prints usage and `cora --version` (`-v`) prints the version. Missing config or an unknown command exits with status 1.
+`cora --help` (`-h`) prints usage and `cora --version` (`-v`) prints the version. Missing config, an unknown command or any other failure (for example a repo that cannot be cloned) exits with status 1 and a one-line `cora: ...` error on stderr.
 
 ### Mock heart
 

@@ -37,27 +37,37 @@ const commands: Record<string, () => Promise<void>> = {
   mock: mockCommand,
 };
 
-async function main() {
+async function main(): Promise<void> {
   const [command] = process.argv.slice(2);
 
   if (!command || command === "--help" || command === "-h") {
     console.log(HELP);
-    process.exit(0);
+    return;
   }
 
   if (command === "--version" || command === "-v") {
     console.log(`cora v${VERSION}`);
-    process.exit(0);
+    return;
   }
 
   const handler = commands[command];
   if (!handler) {
     console.error(`Unknown command: ${command}`);
     console.error('Run "cora --help" for usage.');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   await handler();
 }
 
-main();
+/** Collapse an error to a single line, e.g. git's multi-line stderr. */
+function oneLine(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.trim().replace(/\s*\n\s*/g, " ");
+}
+
+main().catch((error: unknown) => {
+  console.error(`cora: ${oneLine(error)}`);
+  process.exitCode = 1;
+});
