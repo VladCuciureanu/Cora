@@ -67,7 +67,7 @@ export class BeatBuffer {
 
     const bpms = this.samples.map((s) => s.bpm);
     const baseline: BaselineData = {
-      timestamp: new Date().toISOString(),
+      timestamp: this.samples[this.samples.length - 1].timestamp,
       avgBpm: Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length),
       minBpm: Math.min(...bpms),
       maxBpm: Math.max(...bpms),

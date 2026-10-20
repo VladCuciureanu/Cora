@@ -95,3 +95,19 @@ test("BeatBuffer - detects reconnect after gap", async () => {
   const reconnects = events.filter((e) => e.kind === "reconnect");
   assert.deepEqual(reconnects.length, 1);
 });
+
+test("BeatBuffer - baseline is stamped with the last sample's time, not wall-clock time", async () => {
+  const buffer = new BeatBuffer(300_000, 20);
+  let baseline: BaselineData | null = null;
+  buffer.setListener({
+    onBaseline: (data) => { baseline = data; },
+    onEvent: () => {},
+  });
+
+  // Samples from a simulated (accelerated) timeline far from "now"
+  await buffer.addSample({ timestamp: "2020-05-01T08:00:00.000Z", bpm: 70, rrIntervals: [] });
+  await buffer.addSample({ timestamp: "2020-05-01T08:00:05.000Z", bpm: 72, rrIntervals: [] });
+  await buffer.flushWindow();
+
+  assert.deepEqual(baseline!.timestamp, "2020-05-01T08:00:05.000Z");
+});
