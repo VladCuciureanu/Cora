@@ -45,15 +45,17 @@ test("MockHeart - deterministic with same seed", () => {
   const heart1 = new MockHeart({ restingHr: 68, seed: 42 });
   const heart2 = new MockHeart({ restingHr: 68, seed: 42 });
 
-  const date = dateAt(14, 30);
-  // Circadian base is deterministic; activity planning uses Math.random
-  // so we compare the noise component via the same timestamp
-  const bpm1 = heart1.bpmAt(date);
-  const bpm2 = heart2.bpmAt(date);
+  // Same seed = same activity plan and the same BPM at every point of the day
+  assert.deepEqual(heart1.getActivityPlan(), heart2.getActivityPlan());
+  for (let m = 0; m < 24 * 60; m += 5) {
+    const date = dateAt(Math.floor(m / 60), m % 60);
+    assert.equal(heart1.bpmAt(date), heart2.bpmAt(date), `BPM differs at minute ${m}`);
+  }
 
-  // Same seed = same noise, but activity plan may differ (uses Math.random)
-  // At least the base + noise should be very close
-  assert.deepEqual(Math.abs(bpm1 - bpm2) < 80, true, `Same seed BPMs should be close: ${bpm1} vs ${bpm2}`);
+  // ...and replanning stays in lockstep
+  heart1.replanDay();
+  heart2.replanDay();
+  assert.deepEqual(heart1.getActivityPlan(), heart2.getActivityPlan());
 });
 
 test("MockHeart - activity plan has reasonable count", () => {
