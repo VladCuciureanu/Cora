@@ -90,3 +90,39 @@ test("Server - rejects invalid body", async () => {
     await res.json();
   });
 });
+
+test("Server - 401 and 404 errors are JSON", async () => {
+  await withServer(async (base) => {
+    const unauthorized = await fetch(`${base}/beat`, { method: "POST", body: "{}" });
+    assert.deepEqual(unauthorized.status, 401);
+    assert.deepEqual(await unauthorized.json(), { error: "Unauthorized" });
+
+    const missing = await fetch(`${base}/nope`);
+    assert.deepEqual(missing.status, 404);
+    assert.deepEqual(await missing.json(), { error: "Not found" });
+  });
+});
+
+test("Server - rejects an out-of-range bpm or unparseable timestamp", async () => {
+  await withServer(async (base) => {
+    const timestamp = new Date().toISOString();
+    for (const body of [
+      { timestamp, bpm: -5 },
+      { timestamp, bpm: 0 },
+      { timestamp, bpm: 1000 },
+      { timestamp, bpm: "72" },
+      { timestamp: "garbage", bpm: 72 },
+      { timestamp: "2026-13-45T00:00:00Z", bpm: 72 },
+      { timestamp: "March 7, 2026", bpm: 72 },
+      { timestamp: 1_774_000_000_000, bpm: 72 },
+    ]) {
+      const res = await fetch(`${base}/beat`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${TEST_API_KEY}` },
+        body: JSON.stringify(body),
+      });
+      assert.deepEqual(res.status, 400, JSON.stringify(body));
+      assert.ok(typeof (await res.json()).error === "string");
+    }
+  });
+});

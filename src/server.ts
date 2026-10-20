@@ -24,6 +24,32 @@ interface BeatPayload {
   rr_intervals?: number[];
 }
 
+/** Accepted heart-rate range, in beats per minute. */
+const MIN_BPM = 20;
+const MAX_BPM = 300;
+
+/** Why `body` is not a valid beat payload, or null if it is one. */
+function payloadError(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return "Body must be a JSON object";
+  const { timestamp, bpm } = body as Record<string, unknown>;
+  if (!timestamp || bpm === undefined) return "Missing timestamp or bpm";
+  if (
+    typeof timestamp !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(timestamp) ||
+    Number.isNaN(Date.parse(timestamp))
+  ) {
+    return "timestamp must be an ISO 8601 date-time";
+  }
+  if (typeof bpm !== "number" || !(bpm >= MIN_BPM && bpm <= MAX_BPM)) {
+    return `bpm must be a number from ${MIN_BPM} to ${MAX_BPM}`;
+  }
+  return null;
+}
+
+function jsonError(status: number, error: string): Response {
+  return Response.json({ error }, { status });
+}
+
 export class IngestionServer {
   private buffer: BeatBuffer;
   private apiKey: string;
@@ -46,8 +72,8 @@ export class IngestionServer {
         outgoing.end(Buffer.from(await res.arrayBuffer()));
       } catch (e) {
         console.error(e);
-        if (!outgoing.headersSent) outgoing.writeHead(500);
-        outgoing.end("Internal Server Error");
+        if (!outgoing.headersSent) outgoing.writeHead(500, { "Content-Type": "application/json" });
+        outgoing.end(JSON.stringify({ error: "Internal Server Error" }));
       }
     });
     this.server.listen(this.port, hostname, () => {
@@ -66,24 +92,23 @@ export class IngestionServer {
     }
 
     if (req.method !== "POST" || new URL(req.url).pathname !== "/beat") {
-      return new Response("Not found", { status: 404 });
+      return jsonError(404, "Not found");
     }
 
     const auth = req.headers.get("Authorization");
     if (auth !== `Bearer ${this.apiKey}`) {
-      return new Response("Unauthorized", { status: 401 });
+      return jsonError(401, "Unauthorized");
     }
 
     let body: BeatPayload;
     try {
       body = await req.json();
     } catch {
-      return Response.json({ error: "Invalid JSON" }, { status: 400 });
+      return jsonError(400, "Invalid JSON");
     }
 
-    if (!body.timestamp || typeof body.bpm !== "number") {
-      return Response.json({ error: "Missing timestamp or bpm" }, { status: 400 });
-    }
+    const error = payloadError(body);
+    if (error) return jsonError(400, error);
 
     // Deduplicate
     if (this.seenTimestamps.has(body.timestamp)) {
