@@ -1,7 +1,14 @@
 import { networkInterfaces } from "node:os";
 import { createInterface, type Interface } from "node:readline";
 import QRCode from "qrcode";
-import { type CoraConfig, generateApiKey, loadConfig, saveConfig } from "../config.ts";
+import {
+  type CoraConfig,
+  configPath,
+  generateApiKey,
+  isValidPort,
+  loadConfig,
+  saveConfig,
+} from "../config.ts";
 
 // One shared line reader so piped stdin (several answers arriving at once) isn't dropped between prompts.
 let rl: Interface | null = null;
@@ -38,6 +45,16 @@ function getLocalIp(): string | null {
   return null;
 }
 
+/** Ask for the server port until the answer is a valid one; a blank answer means 7331. */
+async function askPort(): Promise<number> {
+  for (;;) {
+    const answer = await prompt("HTTP server port", "7331");
+    const port = /^\d+$/.test(answer) ? Number(answer) : Number.NaN;
+    if (isValidPort(port)) return port;
+    console.error(`cora: invalid port "${answer}": must be an integer from 1 to 65535`);
+  }
+}
+
 /** Ask for the setup answers; null when the user declines to overwrite an existing config. */
 async function askSetup(): Promise<{ githubPat: string; repoUrl: string; port: number } | null> {
   // An invalid config exists too, and overwriting it is the fix
@@ -58,8 +75,7 @@ async function askSetup(): Promise<{ githubPat: string; repoUrl: string; port: n
   const repoUrl = await prompt("Private repo URL (e.g. https://github.com/user/cora-heartbeat)");
   if (!repoUrl) throw new Error("Repo URL is required.");
 
-  const port = parseInt(await prompt("HTTP server port", "7331"), 10) || 7331;
-  return { githubPat, repoUrl, port };
+  return { githubPat, repoUrl, port: await askPort() };
 }
 
 export async function initCommand(): Promise<void> {
@@ -92,7 +108,7 @@ export async function initCommand(): Promise<void> {
   const host = localIp ?? "<your-ip>";
   const endpoint = `http://${host}:${port}/beat`;
 
-  console.log("\n✓ Config saved to ~/.config/cora/config.json");
+  console.log(`\n✓ Config saved to ${configPath()}`);
   console.log("\n— iOS Shortcut Setup —");
   console.log(`  Endpoint: ${endpoint}`);
   console.log(`  API Key:  ${apiKey}`);

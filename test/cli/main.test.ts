@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { type CoraConfig, saveConfig } from "../../src/config.ts";
+import { type CoraConfig, loadConfig, saveConfig } from "../../src/config.ts";
 
 const MAIN = join(import.meta.dirname, "..", "..", "src", "main.ts");
 
@@ -73,5 +73,19 @@ test("cli - a malformed config is reported as such, not as missing", async () =>
     const { code, stderr } = await runCli(["status"], home);
     assert.equal(code, 1);
     assert.match(stderr, /^cora: Config .*config\.json is not valid JSON: .*\n$/);
+  });
+});
+
+test("cli - init re-prompts for an invalid port and prints the real config path", async () => {
+  await withHome(async (home) => {
+    const { code, stdout, stderr } = await runCli(
+      ["init"],
+      home,
+      "ghp_test\nhttps://github.com/u/r\nabc\n70000\n8080\n",
+    );
+    assert.equal(code, 0, stderr);
+    assert.equal(stderr.match(/must be an integer from 1 to 65535/g)?.length, 2, stderr);
+    assert.equal((await loadConfig(configPathIn(home)))?.port, 8080);
+    assert.ok(stdout.includes(`Config saved to ${configPathIn(home)}`), stdout);
   });
 });
