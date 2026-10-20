@@ -361,3 +361,63 @@ test("stripUrlCredentials - removes user info from http(s) URLs only", () => {
   assert.deepEqual(stripUrlCredentials("https://github.com/u/r.git"), "https://github.com/u/r.git");
   assert.deepEqual(stripUrlCredentials("git@github.com:u/r.git"), "git@github.com:u/r.git");
 });
+
+test("GitEngine - fastImport appends commits on top of existing history", async () => {
+  await withTempRepo(async (dir) => {
+    await writeFile(join(dir, "README.md"), "hello\n");
+    await git(["add", "README.md"], dir);
+    await git(["commit", "-m", "readme"], dir);
+
+    const engine = new GitEngine(dir, { skipPush: true });
+    await engine.initLocal();
+
+    const progress: [number, number][] = [];
+    await engine.fastImport([
+      { type: "baseline", data: { timestamp: "2025-01-01T00:05:00.000Z", avgBpm: 60, minBpm: 55, maxBpm: 66, beatCount: 60 } },
+      { type: "event", data: { timestamp: "2025-01-01T00:07:30.000Z", bpm: 130, kind: "spike" } },
+      { type: "baseline", data: { timestamp: "2025-01-01T00:10:00.000Z", avgBpm: 75, minBpm: 62, maxBpm: 130, beatCount: 60 } },
+    ], (done, total) => progress.push([done, total]));
+
+    const epoch = (iso: string) => String(Date.parse(iso) / 1000);
+    assert.deepEqual((await git(["log", "-3", "--format=%s|%at|%ct|%an <%ae>"], dir)).split("\n"), [
+      `♥ 75bpm @ 2025-01-01T00:10:00.000Z|${epoch("2025-01-01T00:10:00Z")}|${epoch("2025-01-01T00:10:00Z")}|Test <test@test.com>`,
+      `⚡ 130bpm spike @ 2025-01-01T00:07:30.000Z|${epoch("2025-01-01T00:07:30Z")}|${epoch("2025-01-01T00:07:30Z")}|Test <test@test.com>`,
+      `♥ 60bpm @ 2025-01-01T00:05:00.000Z|${epoch("2025-01-01T00:05:00Z")}|${epoch("2025-01-01T00:05:00Z")}|Test <test@test.com>`,
+    ]);
+    assert.deepEqual(await git(["log", "--skip=3", "--format=%s"], dir), "readme\ninit");
+
+    // Existing files are kept, beat files are checked out, nothing is left dirty
+    assert.deepEqual((await git(["ls-files"], dir)).split("\n"), [
+      ".gitkeep",
+      "README.md",
+      "beats/2025-01-01T00-05-00.000Z.beat",
+      "beats/2025-01-01T00-07-30.000Z.beat",
+      "beats/2025-01-01T00-10-00.000Z.beat",
+    ]);
+    assert.deepEqual(await readFile(join(dir, "README.md"), "utf8"), "hello\n");
+    assert.deepEqual(JSON.parse(await readFile(join(dir, "beats", "2025-01-01T00-07-30.000Z.beat"), "utf8")), {
+      bpm: 130,
+      kind: "spike",
+    });
+    assert.deepEqual(await git(["status", "--porcelain"], dir), "");
+    assert.deepEqual((await engine.getLatestBeatTimestamp())!.toISOString(), "2025-01-01T00:10:00.000Z");
+    assert.deepEqual(progress, [[3, 3]]);
+
+    await engine.shutdown();
+  });
+});
+
+test("GitEngine - fastImport with no entries is a no-op", async () => {
+  await withTempRepo(async (dir) => {
+    const engine = new GitEngine(dir, { skipPush: true });
+    await engine.initLocal();
+
+    let called = false;
+    await engine.fastImport([], () => { called = true; });
+
+    assert.deepEqual(await git(["rev-list", "--count", "HEAD"], dir), "1");
+    assert.deepEqual(called, false);
+
+    await engine.shutdown();
+  });
+});
