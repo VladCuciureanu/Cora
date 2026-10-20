@@ -1,7 +1,11 @@
 import { readFile, rm } from "node:fs/promises";
 import { pidPath } from "../config.ts";
 
-export async function stopCommand(pidFile = pidPath()): Promise<void> {
+export async function stopCommand({
+  pidFile = pidPath(),
+}: {
+  pidFile?: string;
+} = {}): Promise<void> {
   let pid: number;
   try {
     const text = await readFile(pidFile, "utf8");
