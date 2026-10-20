@@ -40,7 +40,12 @@ function getLocalIp(): string | null {
 
 /** Ask for the setup answers; null when the user declines to overwrite an existing config. */
 async function askSetup(): Promise<{ githubPat: string; repoUrl: string; port: number } | null> {
-  if (await loadConfig()) {
+  // An invalid config exists too, and overwriting it is the fix
+  const exists = await loadConfig().then(
+    (config) => config !== null,
+    () => true,
+  );
+  if (exists) {
     const overwrite = await prompt("Config already exists. Overwrite? (y/N)", "N");
     if (overwrite.toLowerCase() !== "y") return null;
   }

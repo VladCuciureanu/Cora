@@ -88,6 +88,8 @@ Everything lives in `~/.config/cora/` (`$HOME` on Linux and macOS, `%USERPROFILE
 | `commitIntervalMs`      | `300000`      | Time between baseline commits                |
 | `eventThresholdPercent` | `20`          | Deviation (%) that counts as a spike or drop |
 
+Commands fail with an error naming the problem if `config.json` is not valid JSON, has an unknown key, leaves `githubPat`, `repoUrl` or `apiKey` empty, or has a `port` outside 1–65535 or a non-positive `commitIntervalMs` or `eventThresholdPercent`; `cora init` offers to overwrite such a file.
+
 The token is sent as an HTTP header per git command and is never written to `.git/config`.
 
 ## Development

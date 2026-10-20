@@ -38,13 +38,56 @@ export function queuePath(): string {
   return join(configDir(), "queue.jsonl");
 }
 
-export async function loadConfig(path = configPath()): Promise<CoraConfig | null> {
-  try {
-    const text = await readFile(path, "utf8");
-    return { ...DEFAULTS, ...JSON.parse(text) };
-  } catch {
-    return null;
+export function isValidPort(port: unknown): port is number {
+  return Number.isInteger(port) && (port as number) >= 1 && (port as number) <= 65535;
+}
+
+/** Check a parsed config file's keys and value types, filling in defaults. */
+function validateConfig(raw: unknown, path: string): CoraConfig {
+  const invalid = (reason: string) => new Error(`Invalid config ${path}: ${reason}`);
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw invalid("expected a JSON object");
   }
+  const config: Record<string, unknown> = { ...DEFAULTS, ...raw };
+  const strings = ["githubPat", "repoUrl", "apiKey"];
+  const positives = ["commitIntervalMs", "eventThresholdPercent"];
+  for (const key of Object.keys(config)) {
+    if (![...strings, ...positives, "port"].includes(key)) throw invalid(`unknown key "${key}"`);
+  }
+  for (const key of strings) {
+    if (typeof config[key] !== "string" || config[key] === "") {
+      throw invalid(`"${key}" must be a non-empty string`);
+    }
+  }
+  for (const key of positives) {
+    const value = config[key];
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      throw invalid(`"${key}" must be a positive number`);
+    }
+  }
+  if (!isValidPort(config.port)) throw invalid(`"port" must be an integer from 1 to 65535`);
+  return config as unknown as CoraConfig;
+}
+
+/**
+ * Load and validate the config. Returns null when there is no config file;
+ * a file that is not valid JSON or has bad keys or values is an error.
+ */
+export async function loadConfig(path = configPath()): Promise<CoraConfig | null> {
+  let text: string;
+  try {
+    text = await readFile(path, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Config ${path} is not valid JSON: ${(e as Error).message}`);
+  }
+  return validateConfig(raw, path);
 }
 
 /** Load the config, failing with a hint to run `cora init` when there is none. */

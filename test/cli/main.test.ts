@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -63,5 +63,15 @@ test("cli - a failing command prints one error line without a stack trace and ex
     const { code, stderr } = await runCli(["start"], home);
     assert.equal(code, 1);
     assert.match(stderr, /^cora: git clone failed: .*\n$/);
+  });
+});
+
+test("cli - a malformed config is reported as such, not as missing", async () => {
+  await withHome(async (home) => {
+    await saveConfig(configFor(home), configPathIn(home));
+    await writeFile(configPathIn(home), "{ not json");
+    const { code, stderr } = await runCli(["status"], home);
+    assert.equal(code, 1);
+    assert.match(stderr, /^cora: Config .*config\.json is not valid JSON: .*\n$/);
   });
 });
