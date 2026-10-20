@@ -9,13 +9,13 @@ A phone (for example an iOS Shortcut reading Apple Watch data) posts heart-rate 
 ⚡ 142bpm spike @ 2026-03-22T15:02:00.000Z
 ```
 
-No watch? `cora mock` simulates a plausible heart, including sleep, a post-lunch dip and the occasional run.
+No watch? `cora mock` simulates a plausible heart, including sleep, a post-lunch dip and random activity bursts, from a flight of stairs to a run.
 
 ## Requirements
 
 - Node.js 26+ (see `.nvmrc`)
-- git 2.31+ on your `PATH`
-- A GitHub repo to hold the beats and a personal access token with `repo` scope
+- git 2.31+ on your `PATH`, with an identity set (`git config --global user.name` / `user.email`). The email must be one of your GitHub emails, and the commits must land on the repo's default branch, or they won't count on your contribution graph.
+- A private GitHub repo to hold the beats and a personal access token with `repo` scope
 
 ## Install
 
@@ -40,7 +40,7 @@ cora stats    # total commits, first/last beat, current daily streak, average BP
 cora replay   # commit beats queued while commits were failing
 ```
 
-`cora --help` (`-h`) and `cora --version` (`-v`) do what you expect. Missing config or an unknown command exits with status 1.
+`cora --help` (`-h`) prints usage and `cora --version` (`-v`) prints the version. Missing config or an unknown command exits with status 1.
 
 ### Mock heart
 
@@ -50,7 +50,7 @@ cora mock 60                                  # one simulated hour per minute (s
 cora mock --from 2025-01-01 --to 2025-06-01   # backfill a date range via git fast-import
 ```
 
-Live speed is capped at 100x (one 5 s sample every 50 ms of real time), whatever larger value you pass. `--to` only applies with `--from` and defaults to now. A backfill resumes after the newest beat already in the repo, and live mode first fills any gap since that beat. `--speed` has no effect on a backfill.
+Live speed is capped at 100x (one 5 s sample every 50 ms of real time), whatever larger value you pass. `--to` only applies with `--from` and defaults to now. A backfill resumes after the newest beat already in the repo, and live mode first fills the gap since that beat if it is older than `commitIntervalMs`. `--speed` has no effect on a backfill.
 
 ### Sending beats
 
@@ -59,7 +59,7 @@ POST http://<host>:<port>/beat
 Authorization: Bearer <apiKey>
 Content-Type: application/json
 
-{"timestamp": "2026-03-22T14:30:00Z", "bpm": 72, "rr_intervals": [830]}
+{"timestamp": "2026-03-22T14:30:00.000Z", "bpm": 72, "rr_intervals": [830]}
 ```
 
 `timestamp` and `bpm` are required. Responses: `200 {"status":"ok"}`, `200 {"status":"duplicate"}` for a timestamp already seen, `400` for bad JSON or missing fields, `401` for a wrong key. `rr_intervals` is accepted but not stored.
@@ -73,7 +73,7 @@ Content-Type: application/json
 | Baseline | `beats/<timestamp>.beat`         | `avg_bpm`, `min_bpm`, `max_bpm`, `beat_count`  |
 | Event    | `beats/<timestamp>.<kind>.beat`  | `bpm`, `kind` (`spike`, `drop`, `reconnect`)   |
 
-Colons in the timestamp become `-` in filenames. A spike or drop is a reading at least `eventThresholdPercent` away from the average of the last 30 readings; a reconnect is a sample arriving more than 60 s after the previous one. Commits are pushed every 10 s, with a `pull --rebase` and retry if the push is rejected. Commits that fail go to `queue.jsonl` and are retried by `cora start` or `cora replay`.
+Colons in the timestamp become `-` in filenames. A spike or drop is a reading at least `eventThresholdPercent` away from the average of the last 30 readings (once at least 5 are buffered); a reconnect is a sample arriving more than 60 s after the previous one. Commits are pushed every 10 s, with a `pull --rebase` and retry if the push is rejected. Commits that fail go to `queue.jsonl` and are retried by `cora start` or `cora replay`.
 
 ### Files and config
 
