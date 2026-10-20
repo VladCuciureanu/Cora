@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { repoDir, loadConfig } from "../config/mod.ts";
+import { repoDir, loadConfig, type CoraConfig } from "../config/mod.ts";
 
 export interface BaselineData {
   timestamp: string;
@@ -67,6 +67,45 @@ export async function git(args: string[], cwd: string, env?: Record<string, stri
 export type GitRunner = typeof git;
 
 /**
+ * Environment that makes git send the PAT as an HTTP Authorization header to
+ * the repo's host. It is passed per command through GIT_CONFIG_* variables, so
+ * the token is never written to .git/config or exposed in git's arguments.
+ * Remotes that are not http(s) URLs (e.g. local paths) get no header.
+ */
+export function authEnv(repoUrl: string, pat: string): Record<string, string> {
+  let origin: string;
+  try {
+    const url = new URL(repoUrl);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return {};
+    origin = url.origin;
+  } catch {
+    return {};
+  }
+  // Append to any GIT_CONFIG_* entries already set in the environment
+  const n = parseInt(process.env.GIT_CONFIG_COUNT ?? "0", 10) || 0;
+  const basic = Buffer.from(`x-access-token:${pat}`).toString("base64");
+  return {
+    GIT_CONFIG_COUNT: String(n + 1),
+    [`GIT_CONFIG_KEY_${n}`]: `http.${origin}/.extraHeader`,
+    [`GIT_CONFIG_VALUE_${n}`]: `Authorization: Basic ${basic}`,
+  };
+}
+
+/** Remove any `user:password@` from an http(s) URL; other remotes are returned unchanged. */
+export function stripUrlCredentials(remote: string): string {
+  let url: URL;
+  try {
+    url = new URL(remote);
+  } catch {
+    return remote;
+  }
+  if ((url.protocol !== "https:" && url.protocol !== "http:") || (!url.username && !url.password)) return remote;
+  url.username = "";
+  url.password = "";
+  return url.toString();
+}
+
+/**
  * Tail of the operation chain per repo directory. Git operations on the same
  * repo must not overlap (they race on .git/index.lock), so each one waits for
  * the previous one to settle before starting.
@@ -92,6 +131,7 @@ export class GitEngine {
   private pushTimer: ReturnType<typeof setInterval> | undefined;
   private skipPush: boolean;
   private git: GitRunner;
+  private auth: Record<string, string> = {};
 
   constructor(dir?: string, opts?: { skipPush?: boolean; runGit?: GitRunner }) {
     this.dir = dir ?? repoDir();
@@ -104,22 +144,40 @@ export class GitEngine {
     return withRepoLock(this.dir, fn);
   }
 
-  async init(): Promise<void> {
-    const config = await loadConfig();
-    if (!config) throw new Error("Config not found. Run `cora init` first.");
+  async init(config?: CoraConfig): Promise<void> {
+    const cfg = config ?? await loadConfig();
+    if (!cfg) throw new Error("Config not found. Run `cora init` first.");
+    this.auth = authEnv(cfg.repoUrl, cfg.githubPat);
 
+    let cloned = true;
     try {
       await stat(join(this.dir, ".git"));
     } catch {
+      cloned = false;
+    }
+
+    if (cloned) {
+      await this.exclusive(() => this.stripRemoteCredentials());
+    } else {
       await mkdir(this.dir, { recursive: true });
-      const authUrl = config.repoUrl.replace(
-        "https://",
-        `https://${config.githubPat}@`,
-      );
-      await this.exclusive(() => this.git(["clone", authUrl, "."], this.dir));
+      await this.exclusive(() => this.git(["clone", cfg.repoUrl, "."], this.dir, this.auth));
     }
 
     await this.initLocal();
+  }
+
+  /** Older versions embedded the PAT in the clone URL; remove it from .git/config. */
+  private async stripRemoteCredentials(): Promise<void> {
+    let url: string;
+    try {
+      url = await this.git(["remote", "get-url", "origin"], this.dir);
+    } catch {
+      return; // no origin remote
+    }
+    const stripped = stripUrlCredentials(url);
+    if (stripped !== url) {
+      await this.git(["remote", "set-url", "origin", stripped], this.dir);
+    }
   }
 
   async initLocal(): Promise<void> {
@@ -332,13 +390,13 @@ export class GitEngine {
   private async flushUnlocked(): Promise<void> {
     if (this.pendingCommits === 0) return;
     try {
-      await this.git(["push"], this.dir);
+      await this.git(["push"], this.dir, this.auth);
       this.pendingCommits = 0;
     } catch {
       // Push failed, likely non-fast-forward — pull and retry
       try {
-        await this.git(["pull", "--rebase"], this.dir);
-        await this.git(["push"], this.dir);
+        await this.git(["pull", "--rebase"], this.dir, this.auth);
+        await this.git(["push"], this.dir, this.auth);
         this.pendingCommits = 0;
       } catch (e) {
         console.error(`Push failed after pull --rebase (${this.pendingCommits} commits queued): ${e}`);

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat as fsStat, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { GitEngine, beatFilename, git, parseBeatFilename } from "../../src/git/mod.ts";
+import { GitEngine, authEnv, beatFilename, git, parseBeatFilename, stripUrlCredentials } from "../../src/git/mod.ts";
 
 function assertIncludes(actual: string, expected: string): void {
   assert.ok(actual.includes(expected), `Expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`);
@@ -286,4 +286,78 @@ test("GitEngine - a failing git operation does not block later ones", async () =
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+const AUTH_CONFIG = {
+  githubPat: "ghp_secret123",
+  repoUrl: "https://github.com/user/cora-heartbeat.git",
+  apiKey: "k",
+  commitIntervalMs: 300_000,
+  eventThresholdPercent: 20,
+  port: 7331,
+};
+
+test("GitEngine - clone/push send the PAT as a header, never in the URL", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "cora-auth-test-"));
+  try {
+    const calls: { args: string[]; env?: Record<string, string> }[] = [];
+    const runGit = async (args: string[], _cwd: string, env?: Record<string, string>): Promise<string> => {
+      calls.push({ args, env });
+      return "";
+    };
+    const engine = new GitEngine(join(tmp, "repo"), { skipPush: true, runGit });
+    await engine.init(AUTH_CONFIG);
+    await engine.commitEvent({ timestamp: "2026-03-24T12:00:00.000Z", bpm: 120, kind: "spike" });
+    await engine.flush();
+
+    const clone = calls.find((c) => c.args[0] === "clone")!;
+    assert.deepEqual(clone.args, ["clone", AUTH_CONFIG.repoUrl, "."]);
+    const push = calls.find((c) => c.args[0] === "push")!;
+    for (const call of [clone, push]) {
+      assert.deepEqual(call.env, authEnv(AUTH_CONFIG.repoUrl, AUTH_CONFIG.githubPat));
+    }
+    for (const call of calls) {
+      assert.ok(!call.args.join(" ").includes(AUTH_CONFIG.githubPat), `token leaked into: git ${call.args.join(" ")}`);
+    }
+
+    await engine.shutdown();
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("GitEngine - init strips a PAT embedded in an existing clone's remote URL", async () => {
+  await withTempRepo(async (dir) => {
+    await git(["remote", "add", "origin", "https://ghp_secret123@github.com/user/cora-heartbeat.git"], dir);
+
+    const engine = new GitEngine(dir, { skipPush: true });
+    await engine.init(AUTH_CONFIG);
+
+    assert.deepEqual(await git(["remote", "get-url", "origin"], dir), AUTH_CONFIG.repoUrl);
+    const gitConfig = await readFile(join(dir, ".git", "config"), "utf8");
+    assert.ok(!gitConfig.includes("ghp_secret123"), ".git/config still contains the token");
+
+    await engine.shutdown();
+  });
+});
+
+test("authEnv - git sees the Authorization header for the repo's host only", async () => {
+  await withTempRepo(async (dir) => {
+    const env = authEnv(AUTH_CONFIG.repoUrl, AUTH_CONFIG.githubPat);
+    const expected = `Authorization: Basic ${Buffer.from("x-access-token:ghp_secret123").toString("base64")}`;
+    assert.deepEqual(
+      await git(["config", "--get-urlmatch", "http.extraHeader", AUTH_CONFIG.repoUrl], dir, env),
+      expected,
+    );
+    await assert.rejects(git(["config", "--get-urlmatch", "http.extraHeader", "https://example.com/x.git"], dir, env));
+    // Local paths and non-http remotes get no header
+    assert.deepEqual(authEnv("/tmp/some/repo", "ghp_x"), {});
+  });
+});
+
+test("stripUrlCredentials - removes user info from http(s) URLs only", () => {
+  assert.deepEqual(stripUrlCredentials("https://ghp_x@github.com/u/r.git"), "https://github.com/u/r.git");
+  assert.deepEqual(stripUrlCredentials("https://user:ghp_x@github.com/u/r"), "https://github.com/u/r");
+  assert.deepEqual(stripUrlCredentials("https://github.com/u/r.git"), "https://github.com/u/r.git");
+  assert.deepEqual(stripUrlCredentials("git@github.com:u/r.git"), "git@github.com:u/r.git");
 });
