@@ -290,20 +290,26 @@ export async function mockCommand(options: MockOptions = {}): Promise<void> {
   await gitEngine.init(config);
   console.log("✓ Git repo ready");
 
-  const latestBeat = await gitEngine.getLatestBeatTimestamp();
-  const heart = new MockHeart();
+  try {
+    const latestBeat = await gitEngine.getLatestBeatTimestamp();
+    const heart = new MockHeart();
 
-  if (!startDate) {
-    if (latestBeat) console.log(`♥ Last beat: ${latestBeat.toISOString()}`);
-    await runLive(gitEngine, heart, config, speed, latestBeat);
-    return;
-  }
+    if (!startDate) {
+      if (latestBeat) console.log(`♥ Last beat: ${latestBeat.toISOString()}`);
+      await runLive(gitEngine, heart, config, speed, latestBeat);
+      return;
+    }
 
-  // Resume after the latest beat rather than duplicating beats already in the repo
-  let backfillStart = startDate;
-  if (latestBeat && latestBeat.getTime() + 1 > startDate.getTime()) {
-    backfillStart = new Date(latestBeat.getTime() + 1);
-    console.log(`♥ Resuming from last beat: ${latestBeat.toISOString()}`);
+    // Resume after the latest beat rather than duplicating beats already in the repo
+    let backfillStart = startDate;
+    if (latestBeat && latestBeat.getTime() + 1 > startDate.getTime()) {
+      backfillStart = new Date(latestBeat.getTime() + 1);
+      console.log(`♥ Resuming from last beat: ${latestBeat.toISOString()}`);
+    }
+    await backfill(gitEngine, heart, config, backfillStart, backfillEnd);
+  } catch (e) {
+    // Stop the push timer and push what was committed before failing
+    await gitEngine.shutdown();
+    throw e;
   }
-  await backfill(gitEngine, heart, config, backfillStart, backfillEnd);
 }

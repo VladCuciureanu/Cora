@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { type CoraConfig, loadConfig, saveConfig } from "../../src/config.ts";
+import { git } from "../../src/git.ts";
 
 const MAIN = join(import.meta.dirname, "..", "..", "src", "main.ts");
 
@@ -14,12 +15,22 @@ interface CliResult {
   stderr: string;
 }
 
-/** Run the CLI in a child process with its home (and so its config dir) at `home`. */
-function runCli(args: string[], home: string, input = ""): Promise<CliResult> {
+/**
+ * Run the CLI in a child process with its home (and so its config dir) at
+ * `home`. A run that has not exited after 20 s is killed (code null).
+ */
+function runCli(
+  args: string[],
+  home: string,
+  input = "",
+  env: Record<string, string> = {},
+): Promise<CliResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [MAIN, ...args], {
-      env: { ...process.env, HOME: home, USERPROFILE: home },
+      env: { ...process.env, HOME: home, USERPROFILE: home, ...env },
     });
+    const timer = setTimeout(() => child.kill(), 20_000);
+    child.on("close", () => clearTimeout(timer));
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => {
@@ -140,5 +151,24 @@ test("cli - --version prints the package.json version", async () => {
     const { code, stdout } = await runCli(["--version"], home);
     assert.equal(code, 0);
     assert.equal(stdout.trim(), `cora v${manifest.version}`);
+  });
+});
+
+test("cli - a backfill that fails after the repo is cloned exits 1 promptly", async () => {
+  await withHome(async (home) => {
+    const remote = join(home, "remote.git");
+    await git(["init", "--bare", remote], home);
+    await saveConfig(configFor(home, { repoUrl: remote }), configPathIn(home));
+    const started = Date.now();
+    const { code, stderr } = await runCli(
+      ["mock", "--from", "2025-02-01", "--to", "2025-02-01T01:00:00Z"],
+      home,
+      "",
+      // An ident git fast-import rejects, so the import fails after a good clone
+      { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "user.email", GIT_CONFIG_VALUE_0: "bad<x" },
+    );
+    assert.equal(code, 1, stderr);
+    assert.match(stderr, /^cora: git fast-import failed: .*\n$/);
+    assert.ok(Date.now() - started < 10_000, "took too long to exit");
   });
 });

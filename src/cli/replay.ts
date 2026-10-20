@@ -33,12 +33,16 @@ export async function replayCommand(): Promise<void> {
   const gitEngine = new GitEngine();
   await gitEngine.init(config);
 
-  const { processed, failed } = await replayQueue(queue, gitEngine);
-  for (const { error } of failed) {
-    console.error(`Failed to replay entry: ${error}`);
+  let result: Awaited<ReturnType<typeof replayQueue>>;
+  try {
+    result = await replayQueue(queue, gitEngine);
+    for (const { error } of result.failed) {
+      console.error(`Failed to replay entry: ${error}`);
+    }
+  } finally {
+    await gitEngine.shutdown();
   }
-
-  await gitEngine.shutdown();
+  const { processed, failed } = result;
   console.log(
     `✓ Replayed ${processed} beat(s)${failed.length > 0 ? `, ${failed.length} failed (kept in queue)` : ""}.`,
   );

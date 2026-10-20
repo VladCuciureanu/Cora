@@ -218,7 +218,8 @@ export class GitEngine {
   async initLocal(): Promise<void> {
     await mkdir(join(this.dir, "beats"), { recursive: true });
     if (!this.skipPush) {
-      this.pushTimer = setInterval(() => this.flush(), this.pushIntervalMs);
+      // Never the only thing keeping the process alive (e.g. after a failed command)
+      this.pushTimer = setInterval(() => this.flush(), this.pushIntervalMs).unref();
     }
   }
 

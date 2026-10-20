@@ -45,28 +45,35 @@ export async function startCommand(): Promise<void> {
   console.log("✓ Git repo ready");
 
   const queue = new OfflineQueue();
-
-  // Replay any queued beats from previous sessions; failures stay queued
-  const queuedCount = await queue.size();
-  if (queuedCount > 0) {
-    console.log(`♥ Replaying ${queuedCount} queued beat(s)...`);
-    const { failed } = await replayQueue(queue, gitEngine);
-    for (const { error } of failed) {
-      console.error(`Replay failed, kept in queue: ${error}`);
-    }
-  }
-
   const buffer = new BeatBuffer(config.eventThresholdPercent);
   buffer.setListener(commitListener(gitEngine, queue));
-
-  // Periodic baseline flush
-  const baselineTimer = setInterval(() => buffer.flushWindow(), config.commitIntervalMs);
-
+  let baselineTimer: ReturnType<typeof setInterval> | undefined;
   const server = new IngestionServer(buffer, config.apiKey, config.port);
-  server.start();
 
-  // Only advertise the PID once setup has succeeded
-  await writeFile(pidPath(), String(process.pid));
+  try {
+    // Replay any queued beats from previous sessions; failures stay queued
+    const queuedCount = await queue.size();
+    if (queuedCount > 0) {
+      console.log(`♥ Replaying ${queuedCount} queued beat(s)...`);
+      const { failed } = await replayQueue(queue, gitEngine);
+      for (const { error } of failed) {
+        console.error(`Replay failed, kept in queue: ${error}`);
+      }
+    }
+
+    // Periodic baseline flush
+    baselineTimer = setInterval(() => buffer.flushWindow(), config.commitIntervalMs);
+    server.start();
+
+    // Only advertise the PID once setup has succeeded
+    await writeFile(pidPath(), String(process.pid));
+  } catch (e) {
+    // Release everything that would keep the process alive
+    clearInterval(baselineTimer);
+    server.stop();
+    await gitEngine.shutdown();
+    throw e;
+  }
 
   console.log(`♥ Cora is alive (PID ${process.pid})`);
   console.log(
