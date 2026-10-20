@@ -47,6 +47,13 @@ export async function loadConfig(path = configPath()): Promise<CoraConfig | null
   }
 }
 
+/** Load the config, failing with a hint to run `cora init` when there is none. */
+export async function requireConfig(path?: string): Promise<CoraConfig> {
+  const config = await loadConfig(path);
+  if (!config) throw new Error("No config found. Run `cora init` first.");
+  return config;
+}
+
 /** Write the config (it holds the GitHub PAT) readable by the owner only. */
 export async function saveConfig(config: CoraConfig, path = configPath()): Promise<void> {
   await mkdir(dirname(path), { recursive: true });

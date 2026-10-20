@@ -1,4 +1,4 @@
-import { loadConfig } from "../config.ts";
+import { requireConfig } from "../config.ts";
 import { GitEngine } from "../git.ts";
 import { OfflineQueue } from "../queue.ts";
 
@@ -18,11 +18,7 @@ export function replayQueue(
 }
 
 export async function replayCommand(): Promise<void> {
-  const config = await loadConfig();
-  if (!config) {
-    console.error("No config found. Run `cora init` first.");
-    process.exit(1);
-  }
+  const config = await requireConfig();
 
   const queue = new OfflineQueue();
   const total = await queue.size();
@@ -35,7 +31,7 @@ export async function replayCommand(): Promise<void> {
   console.log(`♥ Replaying ${total} queued beat(s)...`);
 
   const gitEngine = new GitEngine();
-  await gitEngine.init();
+  await gitEngine.init(config);
 
   const { processed, failed } = await replayQueue(queue, gitEngine);
   for (const { error } of failed) {

@@ -68,8 +68,7 @@ export async function statsCommand(): Promise<void> {
   try {
     await stat(`${dir}/.git`);
   } catch {
-    console.error("No heartbeat repo found. Run `cora start` first.");
-    process.exit(1);
+    throw new Error("No heartbeat repo found. Run `cora start` first.");
   }
 
   const stats = await getStats(dir);

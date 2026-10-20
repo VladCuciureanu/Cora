@@ -1,6 +1,6 @@
 import { rm, writeFile } from "node:fs/promises";
 import { BeatBuffer, detectDeviation, pushRolling, summarizeWindow } from "../beats.ts";
-import { loadConfig, pidPath } from "../config.ts";
+import { pidPath, requireConfig } from "../config.ts";
 import { type CommitEntry, GitEngine } from "../git.ts";
 import { MockHeart } from "../mock/heart.ts";
 import { OfflineQueue } from "../queue.ts";
@@ -18,14 +18,12 @@ function parseArgs(args: string[]): {
     if (args[i] === "--from" && args[i + 1]) {
       startDate = new Date(args[++i]);
       if (Number.isNaN(startDate.getTime())) {
-        console.error(`Invalid --from date: ${args[i]}`);
-        process.exit(1);
+        throw new Error(`Invalid --from date: ${args[i]}`);
       }
     } else if (args[i] === "--to" && args[i + 1]) {
       endDate = new Date(args[++i]);
       if (Number.isNaN(endDate.getTime())) {
-        console.error(`Invalid --to date: ${args[i]}`);
-        process.exit(1);
+        throw new Error(`Invalid --to date: ${args[i]}`);
       }
     } else if (args[i] === "--speed" && args[i + 1]) {
       speed = parseFloat(args[++i]);
@@ -35,8 +33,7 @@ function parseArgs(args: string[]): {
   }
 
   if (Number.isNaN(speed) || speed <= 0) {
-    console.error("Speed must be a positive number (e.g. 60 = 1 hour/min, 1440 = 1 day/min)");
-    process.exit(1);
+    throw new Error("Speed must be a positive number (e.g. 60 = 1 hour/min, 1440 = 1 day/min)");
   }
 
   return { speed, startDate, endDate };
@@ -100,18 +97,14 @@ export function generateEntries(
 }
 
 export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
-  const config = await loadConfig();
-  if (!config) {
-    console.error("No config found. Run `cora init` first.");
-    process.exit(1);
-  }
+  const config = await requireConfig();
 
   let { speed, startDate, endDate } = parseArgs(argv);
   const backfillMode = startDate !== null;
   const backfillEnd = endDate ?? new Date();
 
   const gitEngine = new GitEngine();
-  await gitEngine.init();
+  await gitEngine.init(config);
   console.log("✓ Git repo ready");
 
   // Resume from latest beat if available
@@ -278,7 +271,6 @@ export async function mockCommand(argv = process.argv.slice(2)): Promise<void> {
       /* ignore */
     }
     console.log("♥ Goodbye.");
-    process.exit(0);
   };
 
   process.on("SIGINT", shutdown);

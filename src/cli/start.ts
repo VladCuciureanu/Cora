@@ -1,6 +1,6 @@
 import { rm, writeFile } from "node:fs/promises";
 import { BeatBuffer, type BeatListener } from "../beats.ts";
-import { loadConfig, pidPath } from "../config.ts";
+import { pidPath, requireConfig } from "../config.ts";
 import { GitEngine } from "../git.ts";
 import { OfflineQueue } from "../queue.ts";
 import { IngestionServer } from "../server.ts";
@@ -29,14 +29,10 @@ export function commitListener(gitEngine: GitEngine, queue: OfflineQueue): BeatL
 }
 
 export async function startCommand(): Promise<void> {
-  const config = await loadConfig();
-  if (!config) {
-    console.error("No config found. Run `cora init` first.");
-    process.exit(1);
-  }
+  const config = await requireConfig();
 
   const gitEngine = new GitEngine();
-  await gitEngine.init();
+  await gitEngine.init(config);
   console.log("✓ Git repo ready");
 
   const queue = new OfflineQueue();
@@ -81,7 +77,6 @@ export async function startCommand(): Promise<void> {
       /* ignore */
     }
     console.log("♥ Goodbye.");
-    process.exit(0);
   };
 
   process.on("SIGINT", shutdown);

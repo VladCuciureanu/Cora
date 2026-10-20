@@ -38,34 +38,37 @@ function getLocalIp(): string | null {
   return null;
 }
 
-export async function initCommand(): Promise<void> {
-  const existing = await loadConfig();
-  if (existing) {
+/** Ask for the setup answers; null when the user declines to overwrite an existing config. */
+async function askSetup(): Promise<{ githubPat: string; repoUrl: string; port: number } | null> {
+  if (await loadConfig()) {
     const overwrite = await prompt("Config already exists. Overwrite? (y/N)", "N");
-    if (overwrite.toLowerCase() !== "y") {
-      closePrompt();
-      console.log("Aborted.");
-      return;
-    }
+    if (overwrite.toLowerCase() !== "y") return null;
   }
 
   console.log("♥ Cora setup\n");
 
   const githubPat = await prompt("GitHub Personal Access Token (repo scope)");
-  if (!githubPat) {
-    console.error("PAT is required.");
-    process.exit(1);
-  }
+  if (!githubPat) throw new Error("PAT is required.");
 
   const repoUrl = await prompt("Private repo URL (e.g. https://github.com/user/cora-heartbeat)");
-  if (!repoUrl) {
-    console.error("Repo URL is required.");
-    process.exit(1);
-  }
+  if (!repoUrl) throw new Error("Repo URL is required.");
 
-  const portStr = await prompt("HTTP server port", "7331");
-  closePrompt();
-  const port = parseInt(portStr, 10) || 7331;
+  const port = parseInt(await prompt("HTTP server port", "7331"), 10) || 7331;
+  return { githubPat, repoUrl, port };
+}
+
+export async function initCommand(): Promise<void> {
+  let answers: Awaited<ReturnType<typeof askSetup>>;
+  try {
+    answers = await askSetup();
+  } finally {
+    closePrompt();
+  }
+  if (!answers) {
+    console.log("Aborted.");
+    return;
+  }
+  const { githubPat, repoUrl, port } = answers;
 
   const apiKey = generateApiKey();
 

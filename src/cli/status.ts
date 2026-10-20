@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { loadConfig, pidPath } from "../config.ts";
+import { pidPath, requireConfig } from "../config.ts";
 
 export async function statusCommand({
   configPath,
@@ -8,11 +8,7 @@ export async function statusCommand({
   configPath?: string;
   pidFile?: string;
 } = {}): Promise<void> {
-  const config = await loadConfig(configPath);
-  if (!config) {
-    console.error("No config found. Run `cora init` first.");
-    process.exit(1);
-  }
+  const config = await requireConfig(configPath);
 
   // Check if process is running
   let running = false;
