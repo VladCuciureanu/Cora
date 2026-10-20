@@ -3,12 +3,15 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { replayQueue } from "../../src/cli/replay.ts";
 import { GitEngine, git } from "../../src/git/mod.ts";
 import { OfflineQueue } from "../../src/queue/mod.ts";
-import { replayQueue } from "../../src/cli/replay.ts";
 
 function assertIncludes(actual: string, expected: string): void {
-  assert.ok(actual.includes(expected), `Expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`);
+  assert.ok(
+    actual.includes(expected),
+    `Expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`,
+  );
 }
 
 async function withTempRepo(fn: (dir: string, queue: OfflineQueue) => Promise<void>) {
@@ -31,7 +34,13 @@ test("replay - drains queue and commits all entries in order", async () => {
   await withTempRepo(async (dir, queue) => {
     await queue.enqueue({
       type: "baseline",
-      data: { timestamp: "2026-01-01T00:00:00.000Z", avgBpm: 68, minBpm: 60, maxBpm: 75, beatCount: 20 },
+      data: {
+        timestamp: "2026-01-01T00:00:00.000Z",
+        avgBpm: 68,
+        minBpm: 60,
+        maxBpm: 75,
+        beatCount: 20,
+      },
     });
     await queue.enqueue({
       type: "event",
@@ -39,7 +48,13 @@ test("replay - drains queue and commits all entries in order", async () => {
     });
     await queue.enqueue({
       type: "baseline",
-      data: { timestamp: "2026-01-01T00:05:00.000Z", avgBpm: 72, minBpm: 65, maxBpm: 80, beatCount: 18 },
+      data: {
+        timestamp: "2026-01-01T00:05:00.000Z",
+        avgBpm: 72,
+        minBpm: 65,
+        maxBpm: 80,
+        beatCount: 18,
+      },
     });
 
     const engine = new GitEngine(dir, { skipPush: true });
@@ -80,7 +95,13 @@ test("replay - preserves original timestamps", async () => {
   await withTempRepo(async (dir, queue) => {
     await queue.enqueue({
       type: "baseline",
-      data: { timestamp: "2025-06-15T03:00:00.000Z", avgBpm: 55, minBpm: 50, maxBpm: 60, beatCount: 5 },
+      data: {
+        timestamp: "2025-06-15T03:00:00.000Z",
+        avgBpm: 55,
+        minBpm: 50,
+        maxBpm: 60,
+        beatCount: 5,
+      },
     });
 
     const engine = new GitEngine(dir, { skipPush: true });
@@ -96,13 +117,23 @@ test("replay - preserves original timestamps", async () => {
 test("replay - entries that fail to commit stay queued", async () => {
   await withTempRepo(async (dir, queue) => {
     const runGit = async (args: string[]): Promise<string> => {
-      if (args[0] === "commit" && args[2].includes("drop")) throw new Error("git commit failed: boom");
+      if (args[0] === "commit" && args[2].includes("drop"))
+        throw new Error("git commit failed: boom");
       return "";
     };
-    const event = { type: "event" as const, data: { timestamp: "2026-01-01T00:01:00.000Z", bpm: 45, kind: "drop" as const } };
+    const event = {
+      type: "event" as const,
+      data: { timestamp: "2026-01-01T00:01:00.000Z", bpm: 45, kind: "drop" as const },
+    };
     await queue.enqueue({
       type: "baseline",
-      data: { timestamp: "2026-01-01T00:00:00.000Z", avgBpm: 68, minBpm: 60, maxBpm: 75, beatCount: 20 },
+      data: {
+        timestamp: "2026-01-01T00:00:00.000Z",
+        avgBpm: 68,
+        minBpm: 60,
+        maxBpm: 75,
+        beatCount: 20,
+      },
     });
     await queue.enqueue(event);
 
@@ -112,7 +143,10 @@ test("replay - entries that fail to commit stay queued", async () => {
     const { processed, failed } = await replayQueue(queue, engine);
 
     assert.deepEqual(processed, 1);
-    assert.deepEqual(failed.map((f) => f.entry), [event]);
+    assert.deepEqual(
+      failed.map((f) => f.entry),
+      [event],
+    );
     assert.deepEqual(await queue.drain(), [event]);
 
     await engine.shutdown();

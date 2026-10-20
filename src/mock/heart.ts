@@ -16,8 +16,8 @@
 interface ActivityBurst {
   startMinute: number; // minute-of-day when burst begins
   durationMin: number; // how long the burst lasts
-  peakBpm: number;     // peak HR during burst
-  rampMin: number;     // minutes to reach peak
+  peakBpm: number; // peak HR during burst
+  rampMin: number; // minutes to reach peak
 }
 
 /** Small seeded PRNG (mulberry32) returning floats in [0, 1). */
@@ -63,15 +63,13 @@ export class MockHeart {
 
   /** Circadian baseline HR based on time of day. */
   private circadianBase(minuteOfDay: number): number {
-    const sleepHr = this.baseRestingHr - 15;  // ~53 for default 68
+    const sleepHr = this.baseRestingHr - 15; // ~53 for default 68
     const dayHr = this.baseRestingHr;
 
     // Sleep: 23:00 (1380) to 06:30 (390)
     if (minuteOfDay >= 1380 || minuteOfDay < 390) {
       // Deep sleep sinusoidal variation (±4 bpm over ~90 min sleep cycles)
-      const sleepPhase = minuteOfDay >= 1380
-        ? (minuteOfDay - 1380)
-        : (minuteOfDay + 60); // normalize to continuous
+      const sleepPhase = minuteOfDay >= 1380 ? minuteOfDay - 1380 : minuteOfDay + 60; // normalize to continuous
       const cyclePos = (sleepPhase % 90) / 90;
       const cycleMod = Math.sin(cyclePos * Math.PI * 2) * 4;
       return sleepHr + cycleMod;
@@ -95,9 +93,10 @@ export class MockHeart {
     const dayProgress = (minuteOfDay - 450) / (1350 - 450); // 0..1
     const ultradianWave = Math.sin(dayProgress * Math.PI * 4) * 3;
     // Slight post-lunch dip around 13:00–14:00 (780–840)
-    const lunchDip = minuteOfDay >= 780 && minuteOfDay <= 840
-      ? -3 * Math.sin(((minuteOfDay - 780) / 60) * Math.PI)
-      : 0;
+    const lunchDip =
+      minuteOfDay >= 780 && minuteOfDay <= 840
+        ? -3 * Math.sin(((minuteOfDay - 780) / 60) * Math.PI)
+        : 0;
     return dayHr + ultradianWave + lunchDip;
   }
 

@@ -17,13 +17,18 @@
     "dev": "node --watch src/main.ts",
     "start": "node src/main.ts",
     "build": "tsc -p tsconfig.build.json",
-    "test": "node --test \"test/**/*_test.ts\"",
-    "typecheck": "tsc"
+    "prepare": "npm run build",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc",
+    "lint": "biome lint",
+    "format": "biome check --write",
+    "check": "biome check && npm run typecheck && npm test"
   },
   "dependencies": {
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@types/node": "^26",
     "@types/qrcode": "^1.5.6",
     "typescript": "^7.0.2"

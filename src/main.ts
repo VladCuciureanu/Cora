@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { initCommand } from "./cli/init.ts";
-import { startCommand } from "./cli/start.ts";
-import { stopCommand } from "./cli/stop.ts";
-import { statusCommand } from "./cli/status.ts";
-import { statsCommand } from "./cli/stats.ts";
-import { replayCommand } from "./cli/replay.ts";
 import { mockCommand } from "./cli/mock.ts";
+import { replayCommand } from "./cli/replay.ts";
+import { startCommand } from "./cli/start.ts";
+import { statsCommand } from "./cli/stats.ts";
+import { statusCommand } from "./cli/status.ts";
+import { stopCommand } from "./cli/stop.ts";
 
 const HELP = `
 cora — your heartbeat on GitHub

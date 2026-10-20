@@ -49,7 +49,7 @@ export async function loadConfig(path = configPath()): Promise<CoraConfig | null
 /** Write the config (it holds the GitHub PAT) readable by the owner only. */
 export async function saveConfig(config: CoraConfig, path = configPath()): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
+  await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   // `mode` only applies when the file is created; tighten an existing file too
   await chmod(path, 0o600);
 }
@@ -57,5 +57,7 @@ export async function saveConfig(config: CoraConfig, path = configPath()): Promi
 export function generateApiKey(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }

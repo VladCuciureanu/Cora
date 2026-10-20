@@ -11,8 +11,8 @@ function dateAt(hour: number, minute: number): Date {
 test("MockHeart - sleep HR is lower than daytime HR", () => {
   const heart = new MockHeart({ restingHr: 68, seed: 42 });
 
-  const sleepBpm = heart.bpmAt(dateAt(3, 0));  // 03:00
-  const dayBpm = heart.bpmAt(dateAt(12, 0));    // 12:00
+  const sleepBpm = heart.bpmAt(dateAt(3, 0)); // 03:00
+  const dayBpm = heart.bpmAt(dateAt(12, 0)); // 12:00
 
   // Sleep HR should be notably lower
   assert.deepEqual(sleepBpm < 60, true, `Sleep BPM ${sleepBpm} should be < 60`);
@@ -33,9 +33,9 @@ test("MockHeart - HR is within physiological range", () => {
 test("MockHeart - wake transition ramps up", () => {
   const heart = new MockHeart({ restingHr: 68, seed: 42 });
 
-  const before = heart.bpmAt(dateAt(6, 15));  // still sleeping
-  const during = heart.bpmAt(dateAt(7, 0));    // mid-transition
-  const after = heart.bpmAt(dateAt(7, 45));    // fully awake
+  const before = heart.bpmAt(dateAt(6, 15)); // still sleeping
+  const during = heart.bpmAt(dateAt(7, 0)); // mid-transition
+  const after = heart.bpmAt(dateAt(7, 45)); // fully awake
 
   assert.deepEqual(during > before, true, `Mid-transition ${during} should be > sleep ${before}`);
   assert.deepEqual(after > during, true, `Awake ${after} should be > mid-transition ${during}`);
@@ -95,7 +95,6 @@ test("MockHeart - activities don't overlap", () => {
 
 test("MockHeart - replanDay generates new activities", () => {
   const heart = new MockHeart({ restingHr: 68 });
-  const plan1 = heart.getActivityPlan();
   heart.replanDay();
   const plan2 = heart.getActivityPlan();
 
@@ -108,12 +107,18 @@ test("MockHeart - replanDay generates new activities", () => {
 test("MockHeart - wind-down period transitions to sleep HR", () => {
   const heart = new MockHeart({ restingHr: 68, seed: 42 });
 
-  const beforeWindDown = heart.bpmAt(dateAt(22, 0));  // still daytime
+  const beforeWindDown = heart.bpmAt(dateAt(22, 0)); // still daytime
   const duringWindDown = heart.bpmAt(dateAt(22, 45)); // mid wind-down
-  const sleep = heart.bpmAt(dateAt(23, 30));           // sleeping
+  const sleep = heart.bpmAt(dateAt(23, 30)); // sleeping
 
-  assert.deepEqual(beforeWindDown > duringWindDown, true,
-    `Before wind-down ${beforeWindDown} should be > during ${duringWindDown}`);
-  assert.deepEqual(duringWindDown > sleep, true,
-    `During wind-down ${duringWindDown} should be > sleep ${sleep}`);
+  assert.deepEqual(
+    beforeWindDown > duringWindDown,
+    true,
+    `Before wind-down ${beforeWindDown} should be > during ${duringWindDown}`,
+  );
+  assert.deepEqual(
+    duringWindDown > sleep,
+    true,
+    `During wind-down ${duringWindDown} should be > sleep ${sleep}`,
+  );
 });

@@ -11,7 +11,9 @@ export function replayQueue(
   gitEngine: GitEngine,
 ): ReturnType<OfflineQueue["process"]> {
   return queue.process((entry) =>
-    entry.type === "baseline" ? gitEngine.commitBaseline(entry.data) : gitEngine.commitEvent(entry.data)
+    entry.type === "baseline"
+      ? gitEngine.commitBaseline(entry.data)
+      : gitEngine.commitEvent(entry.data),
   );
 }
 

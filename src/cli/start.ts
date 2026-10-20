@@ -1,9 +1,9 @@
 import { rm, writeFile } from "node:fs/promises";
+import { BeatBuffer, type BeatListener } from "../beats/mod.ts";
 import { loadConfig, pidPath } from "../config/mod.ts";
 import { GitEngine } from "../git/mod.ts";
-import { BeatBuffer, type BeatListener } from "../beats/mod.ts";
-import { IngestionServer } from "../server/mod.ts";
 import { OfflineQueue } from "../queue/mod.ts";
+import { IngestionServer } from "../server/mod.ts";
 import { replayQueue } from "./replay.ts";
 
 /** Commit baselines and events as they arrive; anything that fails to commit is queued for replay. */
@@ -64,7 +64,9 @@ export async function startCommand(): Promise<void> {
   await writeFile(pidPath(), String(process.pid));
 
   console.log(`♥ Cora is alive (PID ${process.pid})`);
-  console.log(`  Baseline every ${config.commitIntervalMs / 1000}s | Event threshold ±${config.eventThresholdPercent}%`);
+  console.log(
+    `  Baseline every ${config.commitIntervalMs / 1000}s | Event threshold ±${config.eventThresholdPercent}%`,
+  );
 
   // Graceful shutdown
   const shutdown = async () => {
@@ -73,7 +75,11 @@ export async function startCommand(): Promise<void> {
     server.stop();
     await buffer.flushWindow();
     await gitEngine.shutdown();
-    try { await rm(pidPath()); } catch { /* ignore */ }
+    try {
+      await rm(pidPath());
+    } catch {
+      /* ignore */
+    }
     console.log("♥ Goodbye.");
     process.exit(0);
   };

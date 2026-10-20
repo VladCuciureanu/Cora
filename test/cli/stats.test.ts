@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { calculateStreak, parseBpmsFromMessages, getStats } from "../../src/cli/stats.ts";
+import { calculateStreak, getStats, parseBpmsFromMessages } from "../../src/cli/stats.ts";
 import { git } from "../../src/git/mod.ts";
 
 test("calculateStreak - consecutive days from today", () => {
@@ -29,10 +29,7 @@ test("calculateStreak - gap breaks streak", () => {
 
 test("calculateStreak - no commits today means 0", () => {
   const today = new Date("2026-03-24T12:00:00Z");
-  const dates = [
-    "2026-03-22T10:00:00+00:00",
-    "2026-03-23T10:00:00+00:00",
-  ];
+  const dates = ["2026-03-22T10:00:00+00:00", "2026-03-23T10:00:00+00:00"];
   assert.deepEqual(calculateStreak(dates, today), 0);
 });
 
@@ -76,21 +73,24 @@ test("getStats - computes stats from real git repo", async () => {
     const todayIso = today.toISOString();
 
     // Create commits with heartbeat-style messages
-    for (const [bpm, i] of [[70, 0], [80, 1], [90, 2]] as const) {
+    for (const [bpm, i] of [
+      [70, 0],
+      [80, 1],
+      [90, 2],
+    ] as const) {
       const ts = new Date(today.getTime() + i * 60_000).toISOString();
       await writeFile(join(dir, `f${i}.txt`), `${i}`);
       await git(["add", `f${i}.txt`], dir);
-      await git(
-        ["commit", "-m", `♥ ${bpm}bpm @ ${ts}`],
-        dir,
-        { GIT_AUTHOR_DATE: todayIso, GIT_COMMITTER_DATE: todayIso },
-      );
+      await git(["commit", "-m", `♥ ${bpm}bpm @ ${ts}`], dir, {
+        GIT_AUTHOR_DATE: todayIso,
+        GIT_COMMITTER_DATE: todayIso,
+      });
     }
 
     const stats = await getStats(dir, today);
-    assert.deepEqual(stats!.totalCommits, 3);
-    assert.deepEqual(stats!.avgBpm, 80); // (70+80+90)/3
-    assert.deepEqual(stats!.streakDays, 1);
+    assert.deepEqual(stats?.totalCommits, 3);
+    assert.deepEqual(stats?.avgBpm, 80); // (70+80+90)/3
+    assert.deepEqual(stats?.streakDays, 1);
   });
 });
 
@@ -103,7 +103,7 @@ test("getStats - returns null for empty repo", async () => {
 
     const stats = await getStats(dir);
     // Has commits but no bpm data
-    assert.deepEqual(stats!.totalCommits, 1);
-    assert.deepEqual(stats!.avgBpm, null);
+    assert.deepEqual(stats?.totalCommits, 1);
+    assert.deepEqual(stats?.avgBpm, null);
   });
 });

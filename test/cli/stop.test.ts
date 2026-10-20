@@ -19,7 +19,9 @@ async function withTempDir(fn: (dir: string) => Promise<void>) {
 test("stop - terminates the process in the PID file and removes it", async (t) => {
   await withTempDir(async (dir) => {
     const pidFile = join(dir, "cora.pid");
-    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      stdio: "ignore",
+    });
     const exited = once(child, "exit");
     try {
       await writeFile(pidFile, String(child.pid));

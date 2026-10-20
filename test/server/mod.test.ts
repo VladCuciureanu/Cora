@@ -49,7 +49,7 @@ test("Server - accepts valid beat", async () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${TEST_API_KEY}`,
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
       body: JSON.stringify({ timestamp: new Date().toISOString(), bpm: 72, rr_intervals: [833] }),
     });
@@ -64,7 +64,7 @@ test("Server - deduplicates same timestamp", async () => {
     const ts = new Date().toISOString();
     const headers = {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${TEST_API_KEY}`,
+      Authorization: `Bearer ${TEST_API_KEY}`,
     };
     const body = JSON.stringify({ timestamp: ts, bpm: 72 });
 
@@ -82,7 +82,7 @@ test("Server - rejects invalid body", async () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${TEST_API_KEY}`,
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
       body: JSON.stringify({ bpm: 72 }),
     });

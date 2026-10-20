@@ -51,7 +51,12 @@ test("OfflineQueue - process re-queues entries whose handler fails", async () =>
   const tmp = await makeTempFile(".jsonl");
   const queue = new OfflineQueue(tmp);
 
-  const ts = ["2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", "2026-01-01T00:02:00Z", "2026-01-01T00:03:00Z"];
+  const ts = [
+    "2026-01-01T00:00:00Z",
+    "2026-01-01T00:01:00Z",
+    "2026-01-01T00:02:00Z",
+    "2026-01-01T00:03:00Z",
+  ];
   for (const timestamp of ts) {
     await queue.enqueue({ type: "event", data: { timestamp, bpm: 100, kind: "custom" } });
   }
@@ -62,7 +67,10 @@ test("OfflineQueue - process re-queues entries whose handler fails", async () =>
     if (entry.data.timestamp === ts[1] || entry.data.timestamp === ts[3]) {
       // Something enqueued while draining must stay behind the failed entries
       if (entry.data.timestamp === ts[1]) {
-        await queue.enqueue({ type: "event", data: { timestamp: "2026-01-01T00:04:00Z", bpm: 90, kind: "custom" } });
+        await queue.enqueue({
+          type: "event",
+          data: { timestamp: "2026-01-01T00:04:00Z", bpm: 90, kind: "custom" },
+        });
       }
       throw new Error("commit failed");
     }
@@ -70,12 +78,18 @@ test("OfflineQueue - process re-queues entries whose handler fails", async () =>
 
   assert.deepEqual(seen, ts);
   assert.deepEqual(result.processed, 2);
-  assert.deepEqual(result.failed.map((f) => f.entry.data.timestamp), [ts[1], ts[3]]);
+  assert.deepEqual(
+    result.failed.map((f) => f.entry.data.timestamp),
+    [ts[1], ts[3]],
+  );
   assert.deepEqual((result.failed[0].error as Error).message, "commit failed");
 
   // Failed entries are retried on the next drain, in order, ahead of newer ones
   const remaining = await queue.drain();
-  assert.deepEqual(remaining.map((e) => e.data.timestamp), [ts[1], ts[3], "2026-01-01T00:04:00Z"]);
+  assert.deepEqual(
+    remaining.map((e) => e.data.timestamp),
+    [ts[1], ts[3], "2026-01-01T00:04:00Z"],
+  );
 
   await rm(tmp);
 });
@@ -83,7 +97,10 @@ test("OfflineQueue - process re-queues entries whose handler fails", async () =>
 test("OfflineQueue - process with all successes empties the queue", async () => {
   const tmp = await makeTempFile(".jsonl");
   const queue = new OfflineQueue(tmp);
-  await queue.enqueue({ type: "event", data: { timestamp: "2026-01-01T00:00:00Z", bpm: 100, kind: "custom" } });
+  await queue.enqueue({
+    type: "event",
+    data: { timestamp: "2026-01-01T00:00:00Z", bpm: 100, kind: "custom" },
+  });
 
   const result = await queue.process(async () => {});
   assert.deepEqual(result.processed, 1);
