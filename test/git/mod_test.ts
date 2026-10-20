@@ -467,3 +467,33 @@ test("GitEngine - fastImport keeps an event and baseline at the same timestamp",
     await engine.shutdown();
   });
 });
+
+test("GitEngine - fastImport into a repo with no commits starts the unborn branch", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "cora-empty-test-"));
+  try {
+    await git(["init", "-b", "trunk"], dir);
+    await git(["config", "user.email", "test@test.com"], dir);
+    await git(["config", "user.name", "Test"], dir);
+
+    const engine = new GitEngine(dir, { skipPush: true });
+    await engine.initLocal();
+    await engine.fastImport([
+      { type: "baseline", data: { timestamp: "2025-01-01T00:05:00.000Z", avgBpm: 60, minBpm: 55, maxBpm: 66, beatCount: 60 } },
+      { type: "baseline", data: { timestamp: "2025-01-01T00:10:00.000Z", avgBpm: 62, minBpm: 56, maxBpm: 70, beatCount: 60 } },
+    ]);
+
+    assert.deepEqual(await git(["symbolic-ref", "--short", "HEAD"], dir), "trunk");
+    assert.deepEqual(await git(["rev-list", "--count", "HEAD"], dir), "2");
+    assert.deepEqual(await git(["rev-list", "--max-parents=0", "HEAD", "--format=%s", "--no-commit-header"], dir),
+      "♥ 60bpm @ 2025-01-01T00:05:00.000Z");
+    assert.deepEqual((await git(["ls-files"], dir)).split("\n"), [
+      "beats/2025-01-01T00-05-00.000Z.beat",
+      "beats/2025-01-01T00-10-00.000Z.beat",
+    ]);
+    assert.deepEqual(await git(["status", "--porcelain"], dir), "");
+
+    await engine.shutdown();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

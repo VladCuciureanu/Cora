@@ -254,11 +254,16 @@ export class GitEngine {
   private async fastImportUnlocked(entries: CommitEntry[], onProgress?: (done: number, total: number) => void): Promise<void> {
     if (entries.length === 0) return;
 
-    const branch = (await this.git(["rev-parse", "--abbrev-ref", "HEAD"], this.dir)) || "main";
+    // symbolic-ref also names the unborn branch of a repo with no commits yet
+    // (e.g. a fresh clone of an empty GitHub repo), where rev-parse fails.
+    let branch = "main";
+    try {
+      branch = (await this.git(["symbolic-ref", "--short", "HEAD"], this.dir)) || branch;
+    } catch { /* detached HEAD */ }
     let parentRef: string | null = null;
     try {
-      parentRef = await this.git(["rev-parse", "HEAD"], this.dir);
-    } catch { /* empty repo */ }
+      parentRef = await this.git(["rev-parse", "--verify", "--quiet", "HEAD"], this.dir);
+    } catch { /* no commits yet: the first imported commit has no parent */ }
 
     const existingFiles = await this.readTrackedFiles();
 
