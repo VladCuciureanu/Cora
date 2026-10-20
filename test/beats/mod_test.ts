@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BeatBuffer } from "../../src/beats/mod.ts";
+import { BeatBuffer, detectDeviation, pushRolling, summarizeWindow } from "../../src/beats/mod.ts";
 import type { BaselineData, EventData } from "../../src/git/mod.ts";
 
 test("BeatBuffer - flushWindow computes correct baseline", async () => {
@@ -110,4 +110,30 @@ test("BeatBuffer - baseline is stamped with the last sample's time, not wall-clo
   await buffer.flushWindow();
 
   assert.deepEqual(baseline!.timestamp, "2020-05-01T08:00:05.000Z");
+});
+
+test("detectDeviation - needs 5 readings and reports spikes/drops at the threshold", () => {
+  assert.deepEqual(detectDeviation([70, 70, 70, 70], 200, 20), null);
+  assert.deepEqual(detectDeviation([100, 100, 100, 100, 100], 120, 20), "spike");
+  assert.deepEqual(detectDeviation([100, 100, 100, 100, 100], 80, 20), "drop");
+  assert.deepEqual(detectDeviation([100, 100, 100, 100, 100], 119, 20), null);
+});
+
+test("pushRolling - keeps the last 30 readings", () => {
+  const rolling: number[] = [];
+  for (let i = 0; i < 35; i++) pushRolling(rolling, i);
+  assert.deepEqual(rolling.length, 30);
+  assert.deepEqual(rolling[0], 5);
+  assert.deepEqual(rolling[29], 34);
+});
+
+test("summarizeWindow - aggregates samples, null when empty", () => {
+  assert.deepEqual(summarizeWindow([]), null);
+  assert.deepEqual(
+    summarizeWindow([
+      { timestamp: "2026-01-01T00:00:00.000Z", bpm: 60 },
+      { timestamp: "2026-01-01T00:00:05.000Z", bpm: 81 },
+    ]),
+    { timestamp: "2026-01-01T00:00:05.000Z", avgBpm: 71, minBpm: 60, maxBpm: 81, beatCount: 2 },
+  );
 });

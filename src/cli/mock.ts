@@ -1,7 +1,7 @@
 import { rm, writeFile } from "node:fs/promises";
 import { loadConfig, pidPath } from "../config/mod.ts";
-import { GitEngine, type CommitEntry, type BaselineData } from "../git/mod.ts";
-import { BeatBuffer } from "../beats/mod.ts";
+import { GitEngine, type CommitEntry } from "../git/mod.ts";
+import { BeatBuffer, detectDeviation, pushRolling, summarizeWindow } from "../beats/mod.ts";
 import { OfflineQueue } from "../queue/mod.ts";
 import { MockHeart } from "../mock/heart.ts";
 
@@ -39,7 +39,7 @@ function parseArgs(args: string[]): { speed: number; startDate: Date | null; end
 }
 
 /** Generate all commit entries for a date range without touching git. */
-function generateEntries(
+export function generateEntries(
   heart: MockHeart,
   startMs: number,
   endMs: number,
@@ -68,37 +68,19 @@ function generateEntries(
     const bpm = heart.bpmAt(simDate);
 
     // Event detection against rolling average
-    if (rollingBpms.length >= 5) {
-      const avg = rollingBpms.reduce((a, b) => a + b, 0) / rollingBpms.length;
-      const deviation = Math.abs(bpm - avg) / avg * 100;
-      if (deviation >= thresholdPercent) {
-        entries.push({
-          type: "event",
-          data: {
-            timestamp: simDate.toISOString(),
-            bpm,
-            kind: bpm > avg ? "spike" : "drop",
-          },
-        });
-      }
+    const kind = detectDeviation(rollingBpms, bpm, thresholdPercent);
+    if (kind) {
+      entries.push({ type: "event", data: { timestamp: simDate.toISOString(), bpm, kind } });
     }
 
-    rollingBpms.push(bpm);
-    if (rollingBpms.length > 30) rollingBpms.shift();
+    pushRolling(rollingBpms, bpm);
 
     windowSamples.push({ bpm, timestamp: simDate.toISOString() });
 
     // Flush window at commit interval
     if (simTime - lastFlush >= commitIntervalMs) {
-      if (windowSamples.length > 0) {
-        const bpms = windowSamples.map((s) => s.bpm);
-        const baseline: BaselineData = {
-          timestamp: windowSamples[windowSamples.length - 1].timestamp,
-          avgBpm: Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length),
-          minBpm: Math.min(...bpms),
-          maxBpm: Math.max(...bpms),
-          beatCount: windowSamples.length,
-        };
+      const baseline = summarizeWindow(windowSamples);
+      if (baseline) {
         entries.push({ type: "baseline", data: baseline });
         windowSamples = [];
       }
@@ -107,19 +89,8 @@ function generateEntries(
   }
 
   // Flush remaining
-  if (windowSamples.length > 0) {
-    const bpms = windowSamples.map((s) => s.bpm);
-    entries.push({
-      type: "baseline",
-      data: {
-        timestamp: windowSamples[windowSamples.length - 1].timestamp,
-        avgBpm: Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length),
-        minBpm: Math.min(...bpms),
-        maxBpm: Math.max(...bpms),
-        beatCount: windowSamples.length,
-      },
-    });
-  }
+  const baseline = summarizeWindow(windowSamples);
+  if (baseline) entries.push({ type: "baseline", data: baseline });
 
   return entries;
 }
