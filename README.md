@@ -34,7 +34,7 @@ npm start -- --help   # or run from source without linking
 ```sh
 cora init     # prompt for PAT, repo URL and port; generate an API key; print a setup QR code
 cora start    # clone the repo, replay queued beats, start the server
-cora stop     # SIGTERM the running instance; it flushes and pushes before exiting
+cora stop     # SIGTERM the running instance; it flushes and pushes before exiting (exits 1 if it is not running)
 cora status   # whether it is running, its port, and the latest BPM
 cora stats    # total commits, first/last beat, current daily streak, average BPM
 cora replay   # commit beats queued while commits were failing

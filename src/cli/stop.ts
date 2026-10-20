@@ -7,7 +7,7 @@ export async function stopCommand(pidFile = pidPath()): Promise<void> {
     const text = await readFile(pidFile, "utf8");
     pid = parseInt(text.trim(), 10);
   } catch {
-    console.error("Cora is not running (no PID file found).");
+    console.error("cora: Cora is not running (no PID file found).");
     process.exitCode = 1;
     return;
   }
@@ -17,7 +17,8 @@ export async function stopCommand(pidFile = pidPath()): Promise<void> {
     console.log(`♥ Sent SIGTERM to Cora (PID ${pid})`);
     await rm(pidFile);
   } catch {
-    console.error(`Failed to stop Cora (PID ${pid}). Process may have already exited.`);
+    console.error(`cora: Failed to stop Cora (PID ${pid}). Process may have already exited.`);
+    process.exitCode = 1;
     try {
       await rm(pidFile);
     } catch {
