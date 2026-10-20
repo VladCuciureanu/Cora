@@ -21,7 +21,7 @@ Each commit creates a `beats/{timestamp}.beat` file (`beats/{timestamp}.{kind}.b
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org) 24+ (see `.nvmrc`) and `git` 2.31+ on your `PATH`
+- [Node.js](https://nodejs.org) 26+ (see `.nvmrc`) and `git` 2.31+ on your `PATH`
 - A GitHub account and personal access token
 - An Apple Watch + iPhone (for real data) or use `cora mock` for simulation
 
