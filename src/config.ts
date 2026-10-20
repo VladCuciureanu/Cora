@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -18,8 +19,47 @@ const DEFAULTS: Pick<CoraConfig, "commitIntervalMs" | "eventThresholdPercent" | 
   port: 7331,
 };
 
+export interface ConfigDirInputs {
+  homedir: string;
+  env: Record<string, string | undefined>;
+  exists: (path: string) => boolean;
+  note?: (message: string) => void;
+}
+
+/**
+ * The config dir is `~/.config/cora` under `os.homedir()`. Before 0.2 it was
+ * under `$HOME` (falling back to `%USERPROFILE%`), which differs on Windows
+ * when HOME is set. If only that old location has a config, keep using it.
+ */
+export function resolveConfigDir({ homedir, env, exists, note }: ConfigDirInputs): string {
+  const current = join(homedir, ".config", "cora");
+  const legacy = join(env.HOME ?? env.USERPROFILE ?? ".", ".config", "cora");
+  if (
+    legacy !== current &&
+    !exists(join(current, "config.json")) &&
+    exists(join(legacy, "config.json"))
+  ) {
+    note?.(
+      `Note: using the config in ${legacy}; move it to ${current} to use the new default location.`,
+    );
+    return legacy;
+  }
+  return current;
+}
+
+let legacyNoted = false;
+
 function configDir(): string {
-  return join(homedir(), ".config", "cora");
+  return resolveConfigDir({
+    homedir: homedir(),
+    env: process.env,
+    exists: existsSync,
+    note: (message) => {
+      if (legacyNoted) return;
+      legacyNoted = true;
+      console.error(message);
+    },
+  });
 }
 
 export function configPath(): string {

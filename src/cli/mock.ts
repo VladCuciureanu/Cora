@@ -203,19 +203,28 @@ function printLiveStart(heart: MockHeart, speed: number, commitIntervalMs: numbe
   console.log();
 }
 
+/** A running ticker; `stop()` resolves once no tick is in flight and none will start. */
+export interface Ticker {
+  stop(): Promise<void>;
+}
+
 /** Feed `buffer` one 5 s sample per tick, starting now, flushing a baseline every commit interval. */
-function startTicker(
+export function startTicker(
   heart: MockHeart,
-  buffer: BeatBuffer,
+  buffer: Pick<BeatBuffer, "addSample" | "flushWindow">,
   speed: number,
   commitIntervalMs: number,
-): ReturnType<typeof setInterval> {
+): Ticker {
   const simStepMs = 5000;
   let simTime = Date.now();
   let lastDay = new Date(simTime).getDate();
   let lastFlush = simTime;
+  let stopped = false;
+  // Ticks run one after another so stop() can wait for the last one
+  let pending: Promise<void> = Promise.resolve();
 
-  return setInterval(async () => {
+  const tick = async () => {
+    if (stopped) return;
     simTime += simStepMs;
     const simDate = new Date(simTime);
 
@@ -239,7 +248,19 @@ function startTicker(
       await buffer.flushWindow();
       lastFlush = simTime;
     }
+  };
+
+  const timer = setInterval(() => {
+    pending = pending.then(tick, tick);
   }, simStepMs / speed);
+
+  return {
+    async stop() {
+      stopped = true;
+      clearInterval(timer);
+      await pending.catch(() => {});
+    },
+  };
 }
 
 /** Simulate the heart live until SIGINT or SIGTERM, first filling any gap since `latestBeat`. */
@@ -268,9 +289,13 @@ async function runLive(
 
   const ticker = startTicker(heart, buffer, speed, config.commitIntervalMs);
 
+  let stopping = false;
   const shutdown = async () => {
+    if (stopping) return;
+    stopping = true;
     console.log("\n♥ Stopping mock heart...");
-    clearInterval(ticker);
+    // Wait for an in-flight tick so nothing is committed after the final flush
+    await ticker.stop();
     await buffer.flushWindow();
     await gitEngine.shutdown();
     await removePidFile();

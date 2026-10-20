@@ -77,7 +77,7 @@ Colons in the timestamp become `-` in filenames. A spike or drop is a reading at
 
 ### Files and config
 
-Everything lives in `~/.config/cora/` (`$HOME` on Linux and macOS, `%USERPROFILE%` on Windows): `config.json`, the clone in `repo/`, `queue.jsonl` and `cora.pid`. `cora init` writes `config.json` with owner-only permissions:
+Everything lives in `~/.config/cora/` (`$HOME` on Linux and macOS, `%USERPROFILE%` on Windows): `config.json`, the clone in `repo/`, `queue.jsonl` and `cora.pid`. Before 0.2 the directory was under `$HOME` even on Windows; if `%USERPROFILE%` has no config but that old location does, Cora keeps using the old one and says so. `cora init` writes `config.json` with owner-only permissions:
 
 | Key                     | Default       | Meaning                                      |
 | ----------------------- | ------------- | -------------------------------------------- |
@@ -103,3 +103,7 @@ npm run format      # biome check --write
 npm run check       # biome check, typecheck and tests
 npm run build       # tsc -p tsconfig.build.json -> dist/
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

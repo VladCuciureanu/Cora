@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { generateEntries } from "../../src/cli/mock.ts";
+import { generateEntries, startTicker } from "../../src/cli/mock.ts";
 import type { BaselineData } from "../../src/git.ts";
 import { MockHeart } from "../../src/mock/heart.ts";
 
@@ -32,4 +32,26 @@ test("generateEntries - same seed produces the same entries", () => {
     a.some((e) => e.type === "event"),
     "expected some spike/drop events",
   );
+});
+
+test("startTicker - nothing reaches the buffer once stop() resolves", async () => {
+  const calls: string[] = [];
+  const buffer = {
+    async addSample() {
+      calls.push("sample");
+      // keep a tick in flight when stop() is called
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    },
+    async flushWindow() {
+      calls.push("flush");
+    },
+  };
+  // speed 1000: a tick every 5 ms, each a full commit interval
+  const ticker = startTicker(new MockHeart({ seed: 1 }), buffer, 1000, 5000);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  await ticker.stop();
+  const seen = calls.length;
+  assert.ok(seen > 0);
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(calls.length, seen);
 });
