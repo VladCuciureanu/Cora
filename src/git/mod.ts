@@ -162,12 +162,12 @@ export class GitEngine {
       cloned = false;
     }
 
-    if (cloned) {
-      await this.exclusive(() => this.stripRemoteCredentials());
-    } else {
+    if (!cloned) {
       await mkdir(this.dir, { recursive: true });
       await this.exclusive(() => this.git(["clone", cfg.repoUrl, "."], this.dir, this.auth));
     }
+    // Also covers a repoUrl with `user:pat@` in it, which clone saves as-is.
+    await this.exclusive(() => this.stripRemoteCredentials());
 
     await this.initLocal();
   }
